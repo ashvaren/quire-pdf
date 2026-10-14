@@ -2850,6 +2850,18 @@ function wire() {
   $('#fileInsert').onchange = async () => { const fs = [...$('#fileInsert').files]; $('#fileInsert').value = ''; if (fs.length) await busy('Adding pages…', () => insertDocuments(fs)); };
   $$('#tools .btn').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#btnUndo').onclick = undo;
+  // light and dark mode: follows Windows until a choice is made, then remembers it
+  const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  const effectiveTheme = () => document.documentElement.dataset.theme || (darkQuery.matches ? 'dark' : 'light');
+  const applyTheme = t => {
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+    const dark = effectiveTheme() === 'dark', b = $('#btnTheme'), label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    b.classList.toggle('is-dark', dark); b.title = label; b.setAttribute('aria-label', label);
+    const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.content = dark ? '#121c25' : '#1c2b38';
+  };
+  applyTheme(store.get('theme', null));
+  darkQuery.addEventListener?.('change', () => applyTheme(store.get('theme', null)));
+  $('#btnTheme').onclick = () => { const next = effectiveTheme() === 'dark' ? 'light' : 'dark'; store.set('theme', next); applyTheme(next); };
   $('#btnSave').onclick = () => doSave(S.pages, '(edited)', 'copy');
   $('#btnSaveBack').onclick = () => doSave(S.pages, '(edited)', 'replace');
   $('#pRotL').onclick = () => rotateSelected(-90);

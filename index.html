@@ -91,6 +91,9 @@ button { cursor: pointer; }
 .btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
 .btn:disabled { opacity: 0.45; cursor: default; background: transparent; }
 .btn svg { width: 16px; height: 16px; flex: none; }
+#btnTheme .i-sun { display: none; }
+#btnTheme.is-dark .i-sun { display: block; }
+#btnTheme.is-dark .i-moon { display: none; }
 .btn.primary { background: var(--accent); color: var(--on-accent); padding: 0 14px; font-weight: 700; letter-spacing: 0.02em; }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn.outline { border: 1px solid var(--line); background: var(--raise); }
@@ -273,6 +276,7 @@ textarea.field { height: auto; min-height: 70px; padding: 6px 8px; resize: verti
       <button class="btn" id="zIn" aria-label="Zoom in" title="Zoom in">+</button>
       <button class="btn" id="zFit" title="Fit width">Fit</button>
     </div>
+    <button class="btn" id="btnTheme" title="Switch to dark mode" aria-label="Switch to dark mode"><svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg><svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
     <button class="btn primary" id="btnSaveBack" title="Save changes into the original file (Ctrl+S)" hidden>Save</button>
     <button class="btn primary" id="btnSave" title="Save a copy (Ctrl+Shift+S)">Save copy</button>
   </header>

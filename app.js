@@ -1413,7 +1413,7 @@ function openSignDialog() {
         upImg = await createImageBitmap(f);
         const c = el('canvas'); c.width = upImg.width; c.height = upImg.height; c.getContext('2d').drawImage(upImg, 0, 0);
         upImg = c;
-        prev.replaceChildren(el('img', { src: c.toDataURL('image/png'), style: 'max-height:120px' }));
+        prev.replaceChildren(el('img', { src: cleanSignature(c).toDataURL('image/png'), style: 'max-height:120px' }));
       };
       body.append(pick, prev);
     }
@@ -1442,7 +1442,7 @@ function openSignDialog() {
       c.width = Math.ceil(ctx.measureText(name).width + 60); c.height = 170;
       ctx.font = '96px "Mrs Saint Delafield", "Segoe Script", cursive'; ctx.fillStyle = '#14243a'; ctx.fillText(name, 30, 118);
       canvas = trimCanvas(c);
-    } else { if (!upImg) { toast('Choose an image first.'); return; } canvas = upImg; }
+    } else { if (!upImg) { toast('Choose an image first.'); return; } canvas = cleanSignature(upImg); }
     const url = canvas.toDataURL('image/png');
     if (remember.checked) { const l = store.get('signatures', []); if (!l.includes(url)) { l.unshift(url); store.set('signatures', l.slice(0, 6)); } }
     close(); usePng(url);
@@ -1459,16 +1459,48 @@ function trimCanvas(c) {
   const ctx = c.getContext('2d'); const { width: w, height: h } = c;
   const d = ctx.getImageData(0, 0, w, h).data;
   let x0 = w, y0 = h, x1 = 0, y1 = 0;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   if (x1 <= x0) return c;
-  const pad = 6; const o = el('canvas');
+  const pad = 3; const o = el('canvas');
   o.width = x1 - x0 + pad * 2; o.height = y1 - y0 + pad * 2;
   o.getContext('2d').drawImage(c, x0 - pad, y0 - pad, o.width, o.height, 0, 0, o.width, o.height);
   return o;
 }
+// Make a signature image ready to place: paper background made see-through, empty margins
+// cropped, and very large images scaled down. Works for photos and scans as well as drawn ones.
+function cleanSignature(src) {
+  const scale = Math.min(1, 1400 / Math.max(src.width, src.height));
+  const c = el('canvas'); c.width = Math.max(1, Math.round(src.width * scale)); c.height = Math.max(1, Math.round(src.height * scale));
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, c.width, c.height);
+  const im = ctx.getImageData(0, 0, c.width, c.height), d = im.data, n = c.width * c.height;
+  let seeThrough = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i] < 250) seeThrough++;
+  if (seeThrough < n * 0.05) {
+    // opaque picture: take the paper colour from the border, then fade out anything close to it
+    const lum = i => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    const edge = [];
+    for (let x = 0; x < c.width; x += 2) { edge.push(lum(x * 4), lum(((c.height - 1) * c.width + x) * 4)); }
+    for (let y = 0; y < c.height; y += 2) { edge.push(lum(y * c.width * 4), lum((y * c.width + c.width - 1) * 4)); }
+    edge.sort((a, b) => a - b);
+    const paper = edge[Math.floor(edge.length * 0.5)];
+    const lo = paper - 28, hi = Math.max(lo - 1, paper - 110);
+    for (let i = 0; i < d.length; i += 4) {
+      const L = lum(i);
+      const a = L >= lo ? 0 : L <= hi ? 1 : (lo - L) / (lo - hi);
+      d[i + 3] = Math.round(d[i + 3] * a);
+    }
+    ctx.putImageData(im, 0, 0);
+  }
+  return trimCanvas(c);
+}
 async function usePng(dataUrl) {
+  // older saved signatures may still have a white background or wide margins
+  let bmp0 = await createImageBitmap(await (await fetch(dataUrl)).blob());
+  const cleaned = cleanSignature(bmp0);
+  dataUrl = cleaned.toDataURL('image/png');
   const bytes = Uint8Array.from(atob(dataUrl.split(',')[1]), ch => ch.charCodeAt(0));
-  const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }));
+  const bmp = { width: cleaned.width, height: cleaned.height };
   const id = uid();
   S.images.set(id, { bytes, url: dataUrl, w: bmp.width, h: bmp.height });
   S.pendingSig = id;
@@ -1479,7 +1511,8 @@ async function usePng(dataUrl) {
 }
 function placeSignature(u, x, y) {
   const img = S.images.get(S.pendingSig);
-  const wPt = 150, hPt = wPt * img.h / img.w;
+  // a sensible size for a signature: about 5 cm wide, never taller than about 2 cm
+  const ar = img.w / img.h, wPt = Math.min(150, 58 * ar), hPt = wPt / ar;
   const k = views.get(u).vp.scale;
   const f = frameAt(u, x - (wPt * k) / 2, y - (hPt * k) / 2);
   snapshot();
@@ -1621,6 +1654,11 @@ const SHORTCUTS = [
 // Each release adds an entry at the top. APP_VERSION is shown in the status bar and drives the
 // "What's new" box, which appears once after an update unless switched off.
 const RELEASES = [
+  { v: '1.5.2', date: '14 October 2026', items: [
+    'Signatures: the background is now see-through, so table lines and text show through it, even for a photo or scan of a signature.',
+    'The signature box fits the signature itself, so it is placed at a sensible size and is easy to resize from the corner (it keeps its shape).',
+    'Signatures you saved earlier are cleaned up the same way when you use them.',
+  ] },
   { v: '1.5.1', date: '14 October 2026', items: [
     'The status bar at the bottom is no longer cut off.',
     'Tour, What\u2019s new and Feedback buttons in the toolbar, at the top right.',

@@ -1614,6 +1614,10 @@ const SHORTCUTS = [
 // Each release adds an entry at the top. APP_VERSION is shown in the status bar and drives the
 // "What's new" box, which appears once after an update unless switched off.
 const RELEASES = [
+  { v: '1.4.1', date: '14 October 2026', items: [
+    'The welcome step of the tour now shows what\u2019s new in this version, with a link to every version.',
+    'The tour has a new step pointing out the version number and what\u2019s new.',
+  ] },
   { v: '1.4.0', date: '14 October 2026', items: [
     'Version number in the status bar; click it to see the history of changes.',
     'What’s new: after an update, a short summary of the changes appears once when Quire starts. Tick the box to stop it appearing.',
@@ -1669,7 +1673,7 @@ function showWhatsNew({ since = null, onStart = false } = {}) {
 
 // ---- guided tour: a spotlight on each key feature with a short note on how to use it
 const TOUR = [
-  { title: 'Welcome to Quire', body: 'Your PDF editor from Ashvaren. Everything happens on this computer: files are never uploaded anywhere. This short tour shows the main features; it takes about a minute.' },
+  { title: 'Welcome to Quire', body: 'Your PDF editor from Ashvaren. Everything happens on this computer: files are never uploaded anywhere. This short tour shows the main features; it takes about a minute.', extra: 'whatsnew' },
   { sel: '#btnOpen', title: 'Open a PDF', body: 'Click Open, press Ctrl+O, or drag a PDF onto the page. In the installed app you can also double-click a PDF in File Explorer and choose Quire.' },
   { sel: '#btnSave', title: 'Save and Save copy', body: 'Save copy creates a new file and leaves your original untouched. When you open a file from your computer, a Save button appears here too, which writes your changes back into the original (it asks once first).' },
   { sel: '[data-tool="edit"]', title: 'Edit existing text', body: 'Choose Edit text, then click on a line to change a word, with the cursor where you clicked. Drag a box round a paragraph to edit it as a block; the words rewrap to the original margins. Click outside to accept, or press Esc to cancel.' },
@@ -1680,6 +1684,7 @@ const TOUR = [
   { sel: '#btnInsert', to: '#btnBatch', title: 'Combine, compare, Word and batch', body: 'Add pages from other PDFs, compare two versions with the changes marked, export to an editable Word document, or apply the same job to a folder of files.' },
   { sel: '.search', title: 'Find', body: 'Search the whole document (Ctrl+F). Enter jumps to the next match, Shift+Enter to the previous one.' },
   { sel: '#insp', title: 'The side panel', body: 'Settings for the selected tool or item appear here, along with options for saving: watermark, page numbers, headers and footers, Bates numbers, smaller file size and a password. After each save, a report confirms what was checked.' },
+  { sel: '#stVer', title: 'Version and what’s new', body: 'The version you are using is shown here. Click it at any time to see what has changed in each release. After an update, a short What’s new summary also appears once when Quire starts; you can switch that off from the box itself.' },
   { sel: '#btnTheme', title: 'Light or dark', body: 'Switch between light and dark mode. Press ? at any time for the full list of keyboard shortcuts, and use Take the tour in the side panel to see this again.' },
 ];
 let tourEl = null;
@@ -1690,12 +1695,13 @@ function startTour(at = 0) {
   const veil = el('div', { class: 'tour-veil' });
   const hide = el('input', { type: 'checkbox', id: 'tourHide' }); hide.checked = !!store.get('tourHidden', false);
   hide.addEventListener('change', () => store.set('tourHidden', hide.checked));
+  const extra = el('div', { class: 'tour-extra' });
   const title = el('h2', { id: 'tourTitle' }), body = el('p', { id: 'tourBody' }), count = el('span', { class: 'tour-count' }), dots = el('div', { class: 'tour-dots' });
   const back = el('button', { class: 'btn outline', id: 'tourBack', text: 'Back', onclick: () => go(i - 1) });
   const next = el('button', { class: 'btn primary', id: 'tourNext', text: 'Next', onclick: () => (i === TOUR.length - 1 ? endTour() : go(i + 1)) });
   const skip = el('button', { class: 'tour-skip', id: 'tourSkip', text: 'Close tour', onclick: endTour });
   const card = el('div', { class: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'tourTitle', 'aria-describedby': 'tourBody' },
-    el('div', { class: 'tour-top' }, count, skip), title, body, dots,
+    el('div', { class: 'tour-top' }, count, skip), title, body, extra, dots,
     el('div', { class: 'tour-foot' }, el('label', { class: 'toggle' }, hide, document.createTextNode("Don't show on start")), el('div', { class: 'tour-btns' }, back, next)));
   const keys = ev => {
     if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); endTour(); }
@@ -1734,6 +1740,14 @@ function startTour(at = 0) {
     i = Math.max(0, Math.min(TOUR.length - 1, n));
     const st = TOUR[i];
     title.textContent = st.title; body.textContent = st.body;
+    extra.replaceChildren();
+    if (st.extra === 'whatsnew') {
+      const r = RELEASES[0];
+      extra.append(el('div', { class: 'tour-wn' },
+        el('div', { class: 'tour-wn-head' }, el('strong', { text: `What’s new in ${r.v}` }), el('span', { text: r.date })),
+        el('ul', {}, ...r.items.map(t => el('li', { text: t }))),
+        el('button', { class: 'tour-skip', id: 'tourHistory', text: 'See every version', onclick: () => { endTour(); showWhatsNew(); } })));
+    }
     count.textContent = `${i + 1} of ${TOUR.length}`;
     dots.replaceChildren(...TOUR.map((_, k) => el('span', { class: k === i ? 'on' : '' })));
     back.disabled = i === 0;

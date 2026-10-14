@@ -184,12 +184,23 @@ input[type="checkbox"].fld, input[type="radio"].fld { padding: 0; margin: 0; acc
 .tour-foot .toggle { font-size: 12px; color: var(--muted); }
 .tour-btns { display: flex; gap: 6px; }
 #btnTour { margin-top: 4px; margin-left: 4px; }
+#btnFeedbackSide { margin-top: 4px; }
+.dialog.feedback { width: min(600px, 100%); border-top: 3px solid var(--gold); }
+.feedback .seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.feedback .seg .btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.fb-label { font-weight: 700; font-size: 13px; margin-bottom: -6px; }
+.fb-input { width: 100%; padding: 7px 9px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+textarea.fb-input { resize: vertical; line-height: 1.45; }
+.fb-tech { margin: -4px 0 0; padding: 8px 10px; background: var(--raise); border: 1px solid var(--line); border-radius: var(--r); font: 11.5px/1.45 ui-monospace, Consolas, monospace; color: var(--muted); white-space: pre-wrap; max-height: 140px; overflow: auto; }
+#fbStatus:empty { display: none; }
 .tour-wn { background: var(--raise); border: 1px solid var(--line); border-left: 3px solid var(--gold); border-radius: 6px; padding: 8px 10px; margin: 0 0 12px; font-size: 13px; }
 .tour-wn-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .tour-wn-head span { font-size: 11px; color: var(--muted); }
 .tour-wn ul { margin: 6px 0 4px; padding-left: 16px; line-height: 1.45; }
 .tour-wn li { margin: 2px 0; }
 .tour-wn .tour-skip { padding: 0; }
+.status .ver.fb { margin-left: auto; }
+.status .fb + .ver { margin-left: 0; }
 .status .ver { margin-left: auto; border: 0; background: none; color: var(--muted); font: inherit; padding: 0 2px; text-decoration: underline dotted; text-underline-offset: 3px; }
 .status .ver:hover { color: var(--gold); }
 .dialog.whatsnew { width: min(620px, 100%); border-top: 3px solid var(--gold); }
@@ -355,6 +366,7 @@ textarea.field { height: auto; min-height: 70px; padding: 6px 8px; resize: verti
     <span class="name" id="stName">No document</span>
     <span id="stPage"></span>
     <span class="safe" id="stSafe">Your original file is never changed. Saving creates a new copy.</span>
+    <button class="ver fb" id="stFeedback" title="Report a bug, request a feature or ask a question">Feedback</button>
     <button class="ver" id="stVer" title="What’s new in Quire"></button>
   </footer>
 </div>

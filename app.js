@@ -37,6 +37,12 @@ const COLORS = {
 };
 
 // ---------------------------------------------------------------- state
+// recent errors, kept so a bug report can include them (messages only, never document content)
+const recentErrors = [];
+const noteError = m => { recentErrors.push(`${new Date().toISOString().slice(11, 19)} ${String(m).slice(0, 300)}`); if (recentErrors.length > 10) recentErrors.shift(); };
+window.addEventListener('error', e => noteError(e.message || e.error));
+window.addEventListener('unhandledrejection', e => noteError((e.reason && (e.reason.stack || e.reason.message)) || e.reason));
+
 const S = {
   sources: [],          // {name, bytes, pdf (pdf.js doc), numPages, fields: [], text: Map}
   pages: [],            // {uid, src, idx, rot, annots: []}
@@ -1561,7 +1567,8 @@ function renderInspector() {
   box.append(el('section', { class: 'sec' }, el('h3', { text: 'Shortcuts' }),
     el('p', {}, kbd('Ctrl'), ' ', kbd('S'), ' save · ', kbd('Ctrl'), ' ', kbd('Z'), ' undo · ', kbd('?'), ' all shortcuts'),
     el('button', { class: 'btn outline', id: 'btnKeys', text: 'Show all keyboard shortcuts', onclick: showShortcuts }),
-    el('button', { class: 'btn outline', id: 'btnTour', text: 'Take the tour', onclick: () => startTour() })));
+    el('button', { class: 'btn outline', id: 'btnTour', text: 'Take the tour', onclick: () => startTour() }),
+    el('button', { class: 'btn outline', id: 'btnFeedbackSide', text: 'Send feedback', onclick: () => openFeedback() })));
   box.scrollTop = keepScroll;
 }
 const kbd = t => el('span', { class: 'kbd', text: t });
@@ -1614,6 +1621,10 @@ const SHORTCUTS = [
 // Each release adds an entry at the top. APP_VERSION is shown in the status bar and drives the
 // "What's new" box, which appears once after an update unless switched off.
 const RELEASES = [
+  { v: '1.5.0', date: '14 October 2026', items: [
+    'Send feedback: report a bug, request a feature or ask a question from inside Quire. Reports go to a private list on GitHub, with optional technical details to help find problems.',
+    'Feedback sits in the status bar, in the side panel and in the tour.',
+  ] },
   { v: '1.4.1', date: '14 October 2026', items: [
     'The welcome step of the tour now shows what\u2019s new in this version, with a link to every version.',
     'The tour has a new step pointing out the version number and what\u2019s new.',
@@ -1671,6 +1682,93 @@ function showWhatsNew({ since = null, onStart = false } = {}) {
   $('#wnClose').focus();
 }
 
+// ---- feedback: bugs, feature requests and questions go to a private GitHub list
+const FEEDBACK_REPO = 'ashvaren/quire-feedback';
+const FEEDBACK_KINDS = {
+  bug: { label: 'Bug', tag: 'bug', prefix: 'Bug', title: 'What went wrong, in a few words', body: 'What were you doing?\n\nWhat happened?\n\nWhat did you expect to happen?' },
+  feature: { label: 'Feature request', tag: 'enhancement', prefix: 'Feature', title: 'What would you like Quire to do?', body: 'What would you like, and what would it help you do?' },
+  question: { label: 'Question', tag: 'question', prefix: 'Question', title: 'Your question, in a few words', body: 'Ask away. The more detail, the better the answer.' },
+};
+function techDetails() {
+  const ua = navigator.userAgentData;
+  const browser = ua && ua.brands ? ua.brands.filter(b => !/Not.?A.?Brand/i.test(b.brand)).map(b => `${b.brand} ${b.version}`).join(', ') : navigator.userAgent;
+  const lines = [
+    `Quire ${APP_VERSION}`,
+    `Running as: ${window.matchMedia('(display-mode: standalone)').matches ? 'installed app' : window.self !== window.top ? 'inside Claude' : 'browser tab'}`,
+    `Browser: ${browser}`,
+    `System: ${(ua && ua.platform) || navigator.platform}`,
+    `Window: ${window.innerWidth} x ${window.innerHeight}, zoom ${$('#zLabel')?.textContent || ''}`,
+    `Theme: ${document.documentElement.dataset.theme || 'follows Windows'}`,
+    `Document: ${S.sample ? 'sample' : S.pages.length ? `${S.pages.length} pages, ${S.sources.length} source file${S.sources.length === 1 ? '' : 's'}` : 'none'}${S.fileHandle ? ', opened from computer' : ''}`,
+    `Tool: ${S.tool}`,
+  ];
+  if (recentErrors.length) lines.push('Recent errors:', ...recentErrors.map(e => '  ' + e));
+  return lines.join('\n');
+}
+function openFeedback(kind = 'bug') {
+  if (document.querySelector('.modal[aria-label="Send feedback"]')) return;
+  const draft = store.get('feedbackDraft', null) || { kind, title: '', body: '' };
+  if (!draft.title && !draft.body) draft.kind = kind;
+  const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Send feedback' });
+  const close = () => { modal.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  const title = el('input', { type: 'text', id: 'fbTitle', class: 'fb-input', maxlength: '120' }); title.value = draft.title;
+  const body = el('textarea', { id: 'fbBody', class: 'fb-input', rows: '7' }); body.value = draft.body;
+  const tech = el('input', { type: 'checkbox', id: 'fbTech' }); tech.checked = store.get('feedbackTech', true);
+  const techText = el('pre', { class: 'fb-tech', id: 'fbTechText', text: techDetails() });
+  const kinds = el('div', { class: 'seg', role: 'radiogroup', 'aria-label': 'Type of feedback' });
+  const save = () => store.set('feedbackDraft', { kind: draft.kind, title: title.value, body: body.value });
+  const setKind = k => {
+    draft.kind = k;
+    for (const b of kinds.children) b.setAttribute('aria-pressed', String(b.dataset.k === k));
+    title.placeholder = FEEDBACK_KINDS[k].title; body.placeholder = FEEDBACK_KINDS[k].body;
+    techText.hidden = !tech.checked; save();
+  };
+  for (const [k, v] of Object.entries(FEEDBACK_KINDS)) kinds.append(el('button', { class: 'btn outline', 'data-k': k, id: 'fbKind-' + k, text: v.label, onclick: () => setKind(k) }));
+  title.addEventListener('input', save); body.addEventListener('input', save);
+  tech.addEventListener('change', () => { store.set('feedbackTech', tech.checked); techText.hidden = !tech.checked; });
+  const compose = () => {
+    const k = FEEDBACK_KINDS[draft.kind];
+    const t = `[${k.prefix}] ${title.value.trim() || '(no title)'}`;
+    let b = body.value.trim() || '(no details)';
+    if (tech.checked) b += '\n\n---\n<details><summary>Technical details</summary>\n\n```\n' + techDetails() + '\n```\n</details>';
+    b += '\n\n_Sent from Quire_';
+    return { t, b: b.slice(0, 6000), tag: k.tag };
+  };
+  const status = el('p', { class: 'note', id: 'fbStatus' });
+  const send = () => {
+    if (!title.value.trim()) { title.focus(); status.textContent = 'Please add a title.'; return; }
+    const { t, b, tag } = compose();
+    const url = `https://github.com/${FEEDBACK_REPO}/issues/new?` + new URLSearchParams({ title: t, body: b, labels: tag }).toString();
+    const w = window.open(url, '_blank', 'noopener');
+    if (!w && window.self !== window.top) { status.textContent = 'Your browser blocked the new window. Use Copy instead, then paste it into a new issue on GitHub.'; return; }
+    store.set('feedbackDraft', null);
+    status.textContent = 'GitHub has opened in a new window with your report filled in. Check it and press Create to send it.';
+    toast('Feedback ready to send in GitHub');
+  };
+  const copy = async () => {
+    const { t, b } = compose();
+    try { await navigator.clipboard.writeText(`${t}\n\n${b}`); status.textContent = 'Copied. Paste it into a new issue on GitHub, or an email.'; }
+    catch { status.textContent = 'Copying was not allowed here. Select the text and copy it yourself.'; }
+  };
+  modal.append(el('div', { class: 'dialog feedback' },
+    el('div', { class: 'wn-head' }, el('span', { class: 'wn-kicker', text: 'Help improve Quire' }), el('h2', { text: 'Send feedback' })),
+    el('p', { class: 'note', text: 'Report a bug, ask for a feature or ask a question. Reports go to Ashvaren’s private feedback list on GitHub, which only Mike can see. Please do not paste confidential text from your documents.' }),
+    kinds,
+    el('label', { class: 'fb-label', for: 'fbTitle', text: 'Title' }), title,
+    el('label', { class: 'fb-label', for: 'fbBody', text: 'Details' }), body,
+    el('label', { class: 'toggle' }, tech, document.createTextNode('Include technical details (version, browser, recent error messages; never document content)')),
+    techText, status,
+    el('div', { class: 'actions' },
+      el('button', { class: 'btn outline', text: 'Cancel', onclick: close }),
+      el('button', { class: 'btn outline', id: 'fbCopy', text: 'Copy', onclick: copy }),
+      el('button', { class: 'btn primary', id: 'fbSend', text: 'Send via GitHub', onclick: send }))));
+  document.body.append(modal);
+  setKind(draft.kind);
+  (title.value ? body : title).focus();
+}
+
 // ---- guided tour: a spotlight on each key feature with a short note on how to use it
 const TOUR = [
   { title: 'Welcome to Quire', body: 'Your PDF editor from Ashvaren. Everything happens on this computer: files are never uploaded anywhere. This short tour shows the main features; it takes about a minute.', extra: 'whatsnew' },
@@ -1685,6 +1783,7 @@ const TOUR = [
   { sel: '.search', title: 'Find', body: 'Search the whole document (Ctrl+F). Enter jumps to the next match, Shift+Enter to the previous one.' },
   { sel: '#insp', title: 'The side panel', body: 'Settings for the selected tool or item appear here, along with options for saving: watermark, page numbers, headers and footers, Bates numbers, smaller file size and a password. After each save, a report confirms what was checked.' },
   { sel: '#stVer', title: 'Version and what’s new', body: 'The version you are using is shown here. Click it at any time to see what has changed in each release. After an update, a short What’s new summary also appears once when Quire starts; you can switch that off from the box itself.' },
+  { sel: '#stFeedback', title: 'Send feedback', body: 'Found a bug, want a new feature or have a question? Click Feedback, choose which it is and describe it. It goes to a private list on GitHub so it can be tracked and dealt with.' },
   { sel: '#btnTheme', title: 'Light or dark', body: 'Switch between light and dark mode. Press ? at any time for the full list of keyboard shortcuts, and use Take the tour in the side panel to see this again.' },
 ];
 let tourEl = null;
@@ -3233,6 +3332,7 @@ await openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
 let launchedWithFile = false;
 $('#stVer').textContent = `Quire ${APP_VERSION}`;
 $('#stVer').onclick = () => showWhatsNew();
+$('#stFeedback').onclick = () => openFeedback();
 setTimeout(() => {
   if (launchedWithFile || document.querySelector('.modal')) return;
   const seen = store.get('seenVersion', null);
@@ -3252,4 +3352,4 @@ if ('launchQueue' in window) {
     await openFromHandle(handles[0], handles.slice(1));
   });
 }
-window.__quire = { S, APP_VERSION, showWhatsNew, startTour, endTour, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };
+window.__quire = { S, APP_VERSION, openFeedback, techDetails, noteError, showWhatsNew, startTour, endTour, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };

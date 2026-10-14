@@ -1559,11 +1559,73 @@ function renderInspector() {
   box.append(outputPanel());
   if (S.lastReport) box.append(S.lastReport);
   box.append(el('section', { class: 'sec' }, el('h3', { text: 'Shortcuts' }),
-    el('p', {}, kbd('Ctrl'), ' ', kbd('S'), ' save copy · ', kbd('Ctrl'), ' ', kbd('Z'), ' undo · ', kbd('Del'), ' remove selected · tools ',
-      kbd('V'), ' ', kbd('H'), ' ', kbd('T'), ' ', kbd('D'), ' ', kbd('R'), ' ', kbd('W'), ' ', kbd('S'), ' ', kbd('N'), ' ', kbd('P'), ' ', kbd('E'), ' ', kbd('X'))));
+    el('p', {}, kbd('Ctrl'), ' ', kbd('S'), ' save · ', kbd('Ctrl'), ' ', kbd('Z'), ' undo · ', kbd('?'), ' all shortcuts'),
+    el('button', { class: 'btn outline', id: 'btnKeys', text: 'Show all keyboard shortcuts', onclick: showShortcuts })));
   box.scrollTop = keepScroll;
 }
 const kbd = t => el('span', { class: 'kbd', text: t });
+// every keyboard shortcut, grouped, with what it does
+const SHORTCUTS = [
+  ['Files', [
+    [['Ctrl', 'O'], 'Open a PDF'],
+    [['Ctrl', 'S'], 'Save. Writes into the original file when you opened it from your computer; otherwise saves a copy'],
+    [['Ctrl', 'Shift', 'S'], 'Save a copy, leaving the original as it is'],
+  ]],
+  ['Finding text', [
+    [['Ctrl', 'F'], 'Go to the find box'],
+    [['Enter'], 'Next match (in the find box)'],
+    [['Shift', 'Enter'], 'Previous match (in the find box)'],
+  ]],
+  ['Undo and selection', [
+    [['Ctrl', 'Z'], 'Undo the last change'],
+    [['Delete'], 'Remove the selected item (Backspace also works)'],
+    [['Esc'], 'Deselect, cancel a signature waiting to be placed, and go back to Select'],
+  ]],
+  ['Tools', [
+    [['V'], 'Select and move items'],
+    [['H'], 'Highlight text'],
+    [['T'], 'Add text'],
+    [['D'], 'Draw freehand'],
+    [['R'], 'Draw a box'],
+    [['W'], 'White-out'],
+    [['S'], 'Sign'],
+    [['N'], 'Add a comment'],
+    [['P'], 'Stamp'],
+    [['F'], 'Add a form field'],
+    [['E'], 'Edit existing text'],
+    [['X'], 'Redact'],
+  ]],
+  ['While editing text', [
+    [['Enter'], 'Finish editing a single line'],
+    [['Ctrl', 'Enter'], 'Finish editing a paragraph'],
+    [['Enter'], 'Start a new paragraph (in the paragraph editor)'],
+    [['Esc'], 'Cancel the edit and keep the text as it was'],
+    [['Click outside'], 'Accept the edit'],
+  ]],
+  ['Viewing', [
+    [['Ctrl', '+'], 'Zoom in'],
+    [['Ctrl', '\u2212'], 'Zoom out'],
+    [['Ctrl', '0'], 'Fit the page to the window width'],
+    [['?'], 'Show this list'],
+  ]],
+];
+function showShortcuts() {
+  if (document.querySelector('.modal[aria-label="Keyboard shortcuts"]')) return;
+  const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Keyboard shortcuts' });
+  const close = () => { modal.remove(); document.removeEventListener('keydown', esc, true); };
+  const esc = ev => { if (ev.key === 'Escape' || ev.key === '?') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  modal.addEventListener('pointerdown', ev => { if (ev.target === modal) close(); });
+  const groups = SHORTCUTS.map(([title, rows]) => el('section', { class: 'keys-group' }, el('h3', { text: title }),
+    el('dl', { class: 'keys' }, ...rows.flatMap(([keys, what]) => [
+      el('dt', {}, ...keys.flatMap((k, i) => i ? [el('span', { class: 'plus', text: '+' }), kbd(k)] : [kbd(k)])),
+      el('dd', { text: what })]))));
+  modal.append(el('div', { class: 'dialog keys-dialog' }, el('h2', { text: 'Keyboard shortcuts' }),
+    el('p', { class: 'note', text: 'Single-letter shortcuts work whenever you are not typing in a box. On a Mac, use Cmd in place of Ctrl.' }),
+    el('div', { class: 'keys-cols' }, ...groups),
+    el('div', { class: 'actions' }, el('button', { class: 'btn primary', text: 'Close', onclick: close }))));
+  document.body.append(modal);
+}
 function check(val, on) { const c = el('input', { type: 'checkbox' }); c.checked = val; c.addEventListener('change', () => { on(c.checked); refreshAllAnnots(); }); return c; }
 function swatches(list, cur, on) {
   return el('div', { class: 'swatches' }, ...list.map(c => {
@@ -2969,6 +3031,10 @@ function wire() {
     else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
     else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); pickAndOpen(); }
     else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#q').focus(); }
+    else if (mod && (e.key === '=' || e.key === '+')) { e.preventDefault(); $('#zIn').click(); }
+    else if (mod && (e.key === '-' || e.key === '_')) { e.preventDefault(); $('#zOut').click(); }
+    else if (mod && e.key === '0') { e.preventDefault(); $('#zFit').click(); }
+    else if (e.key === '?') { e.preventDefault(); showShortcuts(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.selAnnot) { e.preventDefault(); deleteSelectedAnnot(); }
     else if (e.key === 'Escape') { S.pendingSig = null; if (S.selAnnot) { const u = S.selAnnot.page; S.selAnnot = null; drawAnnots(u); } setTool('select'); }
     else if (!mod) {

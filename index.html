@@ -160,6 +160,15 @@ input[type="checkbox"].fld, input[type="radio"].fld { padding: 0; margin: 0; acc
 .report { border-radius: var(--r); padding: 10px 12px; font-size: 13px; }
 .report.ok { background: var(--ok-soft); color: var(--ok); }
 .report.warn { background: var(--warn-soft); color: var(--warn); }
+.dialog.keys-dialog { width: min(900px, 100%); }
+.keys-cols { columns: 2 300px; column-gap: 28px; }
+.keys-group { break-inside: avoid; margin-bottom: 14px; }
+.keys-group h3 { margin: 0 0 6px; font-size: 13px; color: var(--gold); text-transform: uppercase; letter-spacing: 0.08em; }
+.keys { display: grid; grid-template-columns: 132px 1fr; gap: 5px 12px; margin: 0; align-items: baseline; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; color: var(--ink); }
+.keys .plus { color: var(--muted); margin: 0 3px; font-size: 11px; }
+#btnKeys { margin-top: 4px; }
 .kbd { font: 11px var(--mono); padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--raise); }
 .sig-list { display: flex; flex-direction: column; gap: 6px; }
 .sig-item { display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }

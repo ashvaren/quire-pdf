@@ -1610,6 +1610,63 @@ const SHORTCUTS = [
     [['?'], 'Show this list'],
   ]],
 ];
+// ---- version and what's new
+// Each release adds an entry at the top. APP_VERSION is shown in the status bar and drives the
+// "What's new" box, which appears once after an update unless switched off.
+const RELEASES = [
+  { v: '1.4.0', date: '14 October 2026', items: [
+    'Version number in the status bar; click it to see the history of changes.',
+    'What’s new: after an update, a short summary of the changes appears once when Quire starts. Tick the box to stop it appearing.',
+    'Guided tour of the main features on start, with Don’t show on start; replay it from the side panel.',
+  ] },
+  { v: '1.3.0', date: '14 October 2026', items: [
+    'Editing: clicking outside the box accepts the edit, and clicks inside it move the cursor.',
+    'Edited text no longer leaves an outline. Click any word of an edited paragraph to change just that word, or drag over part of it to select those words.',
+    'Recognised (OCR) text is edited a line at a time, and the scanned words are covered in the saved file.',
+    'Full list of keyboard shortcuts (press ?), and Ctrl +, Ctrl − and Ctrl 0 to zoom.',
+  ] },
+  { v: '1.2.0', date: '14 October 2026', items: [
+    'Ashvaren branding: the fern, house colours and fonts, and a new app icon.',
+    'Light and dark mode switch in the toolbar.',
+    'Save and Save copy now sit beside Open.',
+    'Updates are always fetched fresh, so a new version appears the next time Quire opens.',
+  ] },
+  { v: '1.1.0', date: '14 October 2026', items: [
+    'Save writes your changes into the original file when you opened it from your computer; Save copy still makes a new file.',
+    'Double-click a PDF in File Explorer to open it in the installed app.',
+    'Editing a line keeps the text and puts the cursor where you click.',
+    'Drag a box round a paragraph to edit it as a block; the words rewrap to the original margins.',
+    'Redaction is laid out as three steps: mark, check, save, with a preview of the final boxes.',
+  ] },
+  { v: '1.0.0', date: 'October 2026', items: [
+    'First release: view, annotate, sign, fill and build forms, edit text, redact, reorder and combine pages, compare versions, recognise scanned text, export to Word, batch processing, watermarks, page numbers, headers and footers, Bates numbers and password protection. Works offline.',
+  ] },
+];
+const APP_VERSION = RELEASES[0].v;
+const vparts = v => v.split('.').map(Number);
+const newer = (a, b) => { const x = vparts(a), y = vparts(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
+function showWhatsNew({ since = null, onStart = false } = {}) {
+  if (document.querySelector('.modal[aria-label="What’s new"]')) return;
+  const list = since ? RELEASES.filter(r => newer(r.v, since)) : RELEASES;
+  const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'What’s new' });
+  const off = el('input', { type: 'checkbox', id: 'wnOff' }); off.checked = !!store.get('whatsNewOff', false);
+  off.addEventListener('change', () => store.set('whatsNewOff', off.checked));
+  const close = () => { modal.remove(); document.removeEventListener('keydown', esc, true); store.set('seenVersion', APP_VERSION); };
+  const esc = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
+  document.addEventListener('keydown', esc, true);
+  modal.addEventListener('pointerdown', ev => { if (ev.target === modal) close(); });
+  modal.append(el('div', { class: 'dialog whatsnew' },
+    el('div', { class: 'wn-head' }, el('span', { class: 'wn-kicker', text: onStart ? 'Quire has been updated' : 'Version history' }),
+      el('h2', { text: onStart ? `What’s new in ${APP_VERSION}` : 'What’s new' })),
+    el('div', { class: 'wn-list' }, ...list.map(r => el('section', { class: 'wn-rel' },
+      el('h3', {}, el('span', { class: 'wn-v', text: r.v }), el('span', { class: 'wn-date', text: r.date })),
+      el('ul', {}, ...r.items.map(t => el('li', { text: t })))))),
+    el('div', { class: 'actions wn-foot' }, el('label', { class: 'toggle' }, off, document.createTextNode('Don’t show what’s new on start')),
+      el('button', { class: 'btn primary', id: 'wnClose', text: 'Close', onclick: close }))));
+  document.body.append(modal);
+  $('#wnClose').focus();
+}
+
 // ---- guided tour: a spotlight on each key feature with a short note on how to use it
 const TOUR = [
   { title: 'Welcome to Quire', body: 'Your PDF editor from Ashvaren. Everything happens on this computer: files are never uploaded anywhere. This short tour shows the main features; it takes about a minute.' },
@@ -3160,7 +3217,17 @@ renderInspector();
 await openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
 // the tour greets you on start until you tick "Don't show on start"; not when Quire was opened with a file
 let launchedWithFile = false;
-setTimeout(() => { if (!launchedWithFile && !store.get('tourHidden', false) && !document.querySelector('.modal')) startTour(); }, 700);
+$('#stVer').textContent = `Quire ${APP_VERSION}`;
+$('#stVer').onclick = () => showWhatsNew();
+setTimeout(() => {
+  if (launchedWithFile || document.querySelector('.modal')) return;
+  const seen = store.get('seenVersion', null);
+  // after an update: what's new (unless switched off); otherwise the tour (unless switched off)
+  if (seen && newer(APP_VERSION, seen) && !store.get('whatsNewOff', false)) return showWhatsNew({ since: seen, onStart: true });
+  if (!seen && store.get('tourHidden', false) && !store.get('whatsNewOff', false)) return showWhatsNew({ since: RELEASES[1].v, onStart: true });
+  store.set('seenVersion', APP_VERSION);
+  if (!store.get('tourHidden', false)) startTour();
+}, 700);
 // When installed as an app and chosen to open a PDF from File Explorer, open that file.
 if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async params => {
@@ -3171,4 +3238,4 @@ if ('launchQueue' in window) {
     await openFromHandle(handles[0], handles.slice(1));
   });
 }
-window.__quire = { S, startTour, endTour, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };
+window.__quire = { S, APP_VERSION, showWhatsNew, startTour, endTour, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };

@@ -578,7 +578,7 @@ function drawAnnots(u) {
         'font-size': a.size * v.vp.scale, transform: `rotate(${ang} ${bx} ${by})` });
       t.setAttribute('xml:space', 'preserve');
       t.textContent = a.text;
-      n.append(t, sv('rect', { x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2, fill: 'none', stroke: '#1d5866', 'stroke-opacity': '0.45', 'stroke-dasharray': '2 2' }));
+      n.append(t, sv('rect', { x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2, fill: 'none', stroke: '#4a6272', 'stroke-opacity': '0.45', 'stroke-dasharray': '2 2' }));
     } else if (a.type === 'pedit') {
       const z = rectU2V(u, peditZone(a));
       const css = cssFont(a.font);
@@ -589,7 +589,7 @@ function drawAnnots(u) {
         const t = sv('text', { x: tx, y: ty, fill: a.color || '#000', 'font-family': css.family, 'font-weight': css.weight, 'font-style': css.style, 'font-size': a.size * v.vp.scale });
         t.textContent = w.t; n.append(t);
       }
-      n.append(sv('rect', { x: z.x - 2, y: z.y - 2, width: z.w + 4, height: z.h + 4, fill: 'none', stroke: a.extraLines ? '#b3261e' : '#1d5866', 'stroke-opacity': '0.5', 'stroke-dasharray': '3 2' }));
+      n.append(sv('rect', { x: z.x - 2, y: z.y - 2, width: z.w + 4, height: z.h + 4, fill: 'none', stroke: a.extraLines ? '#b3261e' : '#4a6272', 'stroke-opacity': '0.5', 'stroke-dasharray': '3 2' }));
     } else if (a.type === 'note') {
       const [x, y] = u2v(u, a.at[0], a.at[1]);
       const s = Math.max(14, 16 * v.vp.scale);
@@ -908,7 +908,7 @@ function openEditEditor(u, a, isNew, clickX = null) {
 // ---- edit a paragraph: drag a box round the text
 function dragEditBox(u, x0, y0, e) {
   const v = views.get(u);
-  const ghost = sv('rect', { x: x0, y: y0, width: 0, height: 0, fill: 'rgba(29,88,102,0.08)', stroke: '#1d5866', 'stroke-dasharray': '4 3' });
+  const ghost = sv('rect', { x: x0, y: y0, width: 0, height: 0, fill: 'rgba(74,98,114,0.08)', stroke: '#4a6272', 'stroke-dasharray': '4 3' });
   v.svg.append(ghost);
   let x1 = x0, y1 = y0;
   capture(e, ev => {

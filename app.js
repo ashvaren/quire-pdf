@@ -1560,7 +1560,8 @@ function renderInspector() {
   if (S.lastReport) box.append(S.lastReport);
   box.append(el('section', { class: 'sec' }, el('h3', { text: 'Shortcuts' }),
     el('p', {}, kbd('Ctrl'), ' ', kbd('S'), ' save · ', kbd('Ctrl'), ' ', kbd('Z'), ' undo · ', kbd('?'), ' all shortcuts'),
-    el('button', { class: 'btn outline', id: 'btnKeys', text: 'Show all keyboard shortcuts', onclick: showShortcuts })));
+    el('button', { class: 'btn outline', id: 'btnKeys', text: 'Show all keyboard shortcuts', onclick: showShortcuts }),
+    el('button', { class: 'btn outline', id: 'btnTour', text: 'Take the tour', onclick: () => startTour() })));
   box.scrollTop = keepScroll;
 }
 const kbd = t => el('span', { class: 'kbd', text: t });
@@ -1609,6 +1610,91 @@ const SHORTCUTS = [
     [['?'], 'Show this list'],
   ]],
 ];
+// ---- guided tour: a spotlight on each key feature with a short note on how to use it
+const TOUR = [
+  { title: 'Welcome to Quire', body: 'Your PDF editor from Ashvaren. Everything happens on this computer: files are never uploaded anywhere. This short tour shows the main features; it takes about a minute.' },
+  { sel: '#btnOpen', title: 'Open a PDF', body: 'Click Open, press Ctrl+O, or drag a PDF onto the page. In the installed app you can also double-click a PDF in File Explorer and choose Quire.' },
+  { sel: '#btnSave', title: 'Save and Save copy', body: 'Save copy creates a new file and leaves your original untouched. When you open a file from your computer, a Save button appears here too, which writes your changes back into the original (it asks once first).' },
+  { sel: '[data-tool="edit"]', title: 'Edit existing text', body: 'Choose Edit text, then click on a line to change a word, with the cursor where you clicked. Drag a box round a paragraph to edit it as a block; the words rewrap to the original margins. Click outside to accept, or press Esc to cancel.' },
+  { sel: '[data-tool="highlight"]', to: '[data-tool="stamp"]', title: 'Mark up the page', body: 'Highlight, add text, draw, add boxes, white-out, comment and stamp. Pick a tool, then click or drag on the page. Use Select (V) to move or delete what you have added.' },
+  { sel: '[data-tool="sign"]', title: 'Sign', body: 'Draw, type or upload your signature once and tick Remember to keep it on this computer. Then click wherever it should go.' },
+  { sel: '[data-tool="redact"]', title: 'Redact', body: 'Three steps: mark what must go (drag boxes, or find a name and Mark all), check the marks, then Save redacted copy. The text and pictures underneath are deleted from the file and Quire checks nothing readable is left.' },
+  { sel: '.rail', title: 'Pages', body: 'Drag thumbnails to reorder. Rotate, delete, extract or split pages, insert a blank page or an image. Ctrl or Shift selects several.' },
+  { sel: '#btnInsert', to: '#btnBatch', title: 'Combine, compare, Word and batch', body: 'Add pages from other PDFs, compare two versions with the changes marked, export to an editable Word document, or apply the same job to a folder of files.' },
+  { sel: '.search', title: 'Find', body: 'Search the whole document (Ctrl+F). Enter jumps to the next match, Shift+Enter to the previous one.' },
+  { sel: '#insp', title: 'The side panel', body: 'Settings for the selected tool or item appear here, along with options for saving: watermark, page numbers, headers and footers, Bates numbers, smaller file size and a password. After each save, a report confirms what was checked.' },
+  { sel: '#btnTheme', title: 'Light or dark', body: 'Switch between light and dark mode. Press ? at any time for the full list of keyboard shortcuts, and use Take the tour in the side panel to see this again.' },
+];
+let tourEl = null;
+function startTour(at = 0) {
+  endTour();
+  let i = at;
+  const spot = el('div', { class: 'tour-spot' });
+  const veil = el('div', { class: 'tour-veil' });
+  const hide = el('input', { type: 'checkbox', id: 'tourHide' }); hide.checked = !!store.get('tourHidden', false);
+  hide.addEventListener('change', () => store.set('tourHidden', hide.checked));
+  const title = el('h2', { id: 'tourTitle' }), body = el('p', { id: 'tourBody' }), count = el('span', { class: 'tour-count' }), dots = el('div', { class: 'tour-dots' });
+  const back = el('button', { class: 'btn outline', id: 'tourBack', text: 'Back', onclick: () => go(i - 1) });
+  const next = el('button', { class: 'btn primary', id: 'tourNext', text: 'Next', onclick: () => (i === TOUR.length - 1 ? endTour() : go(i + 1)) });
+  const skip = el('button', { class: 'tour-skip', id: 'tourSkip', text: 'Close tour', onclick: endTour });
+  const card = el('div', { class: 'tour-card', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'tourTitle', 'aria-describedby': 'tourBody' },
+    el('div', { class: 'tour-top' }, count, skip), title, body, dots,
+    el('div', { class: 'tour-foot' }, el('label', { class: 'toggle' }, hide, document.createTextNode("Don't show on start")), el('div', { class: 'tour-btns' }, back, next)));
+  const keys = ev => {
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); endTour(); }
+    else if (ev.key === 'ArrowRight' || (ev.key === 'Enter' && ev.target === document.body)) { ev.preventDefault(); ev.stopPropagation(); next.click(); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); if (i > 0) go(i - 1); }
+    else if (!ev.target.closest?.('.tour-card')) { ev.stopPropagation(); }
+  };
+  const place = () => {
+    const st = TOUR[i];
+    const a = st.sel && document.querySelector(st.sel), b = st.to && document.querySelector(st.to);
+    const cw = Math.min(360, window.innerWidth - 32);
+    card.style.width = cw + 'px';
+    if (!a || !a.getClientRects().length) {
+      spot.style.display = 'none'; veil.style.clipPath = '';
+      card.style.left = (window.innerWidth - cw) / 2 + 'px'; card.style.top = Math.max(16, (window.innerHeight - card.offsetHeight) / 2) + 'px';
+      return;
+    }
+    spot.style.display = 'block';
+    let r = a.getBoundingClientRect();
+    if (b) { const r2 = b.getBoundingClientRect(); r = { left: Math.min(r.left, r2.left), top: Math.min(r.top, r2.top), right: Math.max(r.right, r2.right), bottom: Math.max(r.bottom, r2.bottom) }; }
+    const pad = 6, L = Math.max(4, r.left - pad), T = Math.max(4, r.top - pad), R = Math.min(window.innerWidth - 4, r.right + pad), B = Math.min(window.innerHeight - 4, r.bottom + pad);
+    Object.assign(spot.style, { left: L + 'px', top: T + 'px', width: (R - L) + 'px', height: (B - T) + 'px' });
+    // dim everything except the feature being described
+    const W = window.innerWidth, Hh = window.innerHeight;
+    veil.style.clipPath = `path(evenodd, 'M0 0H${W}V${Hh}H0Z M${L} ${T}H${R}V${B}H${L}Z')`;
+    const ch = card.offsetHeight, gap = 14;
+    let x, y;
+    if (B + gap + ch < window.innerHeight - 8) { y = B + gap; x = (L + R) / 2 - cw / 2; }
+    else if (T - gap - ch > 8) { y = T - gap - ch; x = (L + R) / 2 - cw / 2; }
+    else if (L - gap - cw > 8) { x = L - gap - cw; y = (T + B) / 2 - ch / 2; }
+    else { x = R + gap; y = (T + B) / 2 - ch / 2; }
+    card.style.left = Math.max(12, Math.min(window.innerWidth - cw - 12, x)) + 'px';
+    card.style.top = Math.max(12, Math.min(window.innerHeight - ch - 12, y)) + 'px';
+  };
+  const go = n => {
+    i = Math.max(0, Math.min(TOUR.length - 1, n));
+    const st = TOUR[i];
+    title.textContent = st.title; body.textContent = st.body;
+    count.textContent = `${i + 1} of ${TOUR.length}`;
+    dots.replaceChildren(...TOUR.map((_, k) => el('span', { class: k === i ? 'on' : '' })));
+    back.disabled = i === 0;
+    next.textContent = i === TOUR.length - 1 ? 'Finish' : 'Next';
+    place();
+    next.focus();
+  };
+  tourEl = { nodes: [veil, spot, card], cleanup: () => { document.removeEventListener('keydown', keys, true); window.removeEventListener('resize', place); } };
+  document.addEventListener('keydown', keys, true);
+  window.addEventListener('resize', place);
+  document.body.append(veil, spot, card);
+  go(i);
+}
+function endTour() {
+  if (!tourEl) return;
+  tourEl.cleanup(); tourEl.nodes.forEach(n => n.remove()); tourEl = null;
+}
+
 function showShortcuts() {
   if (document.querySelector('.modal[aria-label="Keyboard shortcuts"]')) return;
   const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Keyboard shortcuts' });
@@ -3071,14 +3157,18 @@ function wire() {
 S.author = store.get('author', '');
 wire();
 renderInspector();
-openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
+await openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
+// the tour greets you on start until you tick "Don't show on start"; not when Quire was opened with a file
+let launchedWithFile = false;
+setTimeout(() => { if (!launchedWithFile && !store.get('tourHidden', false) && !document.querySelector('.modal')) startTour(); }, 700);
 // When installed as an app and chosen to open a PDF from File Explorer, open that file.
 if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async params => {
     if (!params.files || !params.files.length) return;
+    launchedWithFile = true; endTour();
     const handles = params.files.filter(h => h.kind === 'file' && /\.pdf$/i.test(h.name));
     if (!handles.length) return;
     await openFromHandle(handles[0], handles.slice(1));
   });
 }
-window.__quire = { S, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };
+window.__quire = { S, startTour, endTour, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };

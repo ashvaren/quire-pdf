@@ -169,6 +169,21 @@ input[type="checkbox"].fld, input[type="radio"].fld { padding: 0; margin: 0; acc
 .keys dd { margin: 0; color: var(--ink); }
 .keys .plus { color: var(--muted); margin: 0 3px; font-size: 11px; }
 #btnKeys { margin-top: 4px; }
+.tour-veil { position: fixed; inset: 0; background: rgba(10, 16, 20, 0.55); z-index: 60; }
+.tour-spot { position: fixed; z-index: 60; border-radius: 8px; box-shadow: 0 0 0 3px var(--gold), 0 0 18px 4px rgba(184, 147, 62, 0.45); transition: left 0.25s, top 0.25s, width 0.25s, height 0.25s; pointer-events: none; }
+.tour-card { position: fixed; z-index: 61; background: var(--panel); color: var(--ink); border-radius: 10px; box-shadow: var(--shadow); padding: 16px 18px 14px; border-top: 3px solid var(--gold); transition: left 0.25s, top 0.25s; }
+.tour-card h2 { margin: 4px 0 6px; font: 600 17px var(--head); }
+.tour-card p { margin: 0 0 12px; line-height: 1.5; }
+.tour-top { display: flex; justify-content: space-between; align-items: center; }
+.tour-count { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gold); font-weight: 700; }
+.tour-skip { border: 0; background: none; color: var(--muted); font-size: 12px; padding: 2px 4px; text-decoration: underline; }
+.tour-dots { display: flex; gap: 5px; margin-bottom: 12px; }
+.tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.tour-dots span.on { background: var(--gold); }
+.tour-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tour-foot .toggle { font-size: 12px; color: var(--muted); }
+.tour-btns { display: flex; gap: 6px; }
+#btnTour { margin-top: 4px; margin-left: 4px; }
 .kbd { font: 11px var(--mono); padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--raise); }
 .sig-list { display: flex; flex-direction: column; gap: 6px; }
 .sig-item { display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }

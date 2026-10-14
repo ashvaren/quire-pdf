@@ -1,15 +1,17 @@
 // Quire PDF offline cache. Change VERSION whenever the files are updated, so every
 // installed copy fetches the new set once and then runs offline again.
-const VERSION = 'quire-v5-1';
+const VERSION = 'quire-v5-2';
 const CORE = ["app.js", "compare.js", "engine.js", "export.js", "icon-192.png", "icon-512.png", "index.html", "lib/fflate.mjs", "lib/pdf-lib.min.js", "lib/pdf.min.mjs", "lib/pdf.worker.min.mjs", "manifest.json", "ocr.js", "textgeom.js", "lib/fonts/lato-latin-400-italic.woff2", "lib/fonts/lato-latin-400-normal.woff2", "lib/fonts/lato-latin-700-normal.woff2", "lib/fonts/mrs-saint-delafield-latin-400-normal.woff2", "lib/fonts/raleway-latin-400-normal.woff2", "lib/fonts/raleway-latin-500-normal.woff2", "lib/fonts/raleway-latin-600-normal.woff2"];
 const HEAVY = ["lib/mupdf/mupdf-wasm.js", "lib/mupdf/mupdf-wasm.wasm", "lib/mupdf/mupdf.js", "lib/tess/eng-traineddata.wasm", "lib/tess/ocr-worker.js", "lib/tess/tesseract-core-lstm.wasm.js", "lib/tess/tesseract-core-simd-lstm.wasm.js", "lib/tess/tesseract.esm.min.js", "lib/tess/worker.min.js"];
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
     const c = await caches.open(VERSION);
-    await c.addAll(['./', ...CORE]);
+    // bypass the browser's HTTP cache so an update never stores yesterday's files
+    const fresh = u => new Request(u, { cache: 'reload' });
+    await c.addAll(['./', ...CORE].map(fresh));
     // the engines are large; fetch them now too, but do not fail the install over them
-    await Promise.allSettled(HEAVY.map(f => c.add(f)));
+    await Promise.allSettled(HEAVY.map(f => c.add(fresh(f))));
     await self.skipWaiting();
   })());
 });

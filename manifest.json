@@ -1,0 +1,17 @@
+{
+  "name": "Quire PDF",
+  "short_name": "Quire",
+  "description": "Offline PDF editor",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#e4e8ea",
+  "theme_color": "#1d5866",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "file_handlers": [
+    { "action": "./", "accept": { "application/pdf": [".pdf"] } }
+  ]
+}

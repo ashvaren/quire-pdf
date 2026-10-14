@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<meta name="theme-color" content="#1d5866">
+<title>Quire PDF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=Mrs+Saint+Delafield&display=swap">
+<style>
+/* Layout: a working desk. Toolbar across the top, page rail on the left,
+   the document in the centre on a cool desk surface, an inspector on the right. */
+:root {
+  --desk: #e4e8ea;
+  --panel: #f6f7f8;
+  --raise: #ffffff;
+  --ink: #1b2227;
+  --muted: #5d6870;
+  --line: #d2d8dc;
+  --accent: #1d5866;
+  --accent-soft: #d6e7ea;
+  --on-accent: #ffffff;
+  --warn: #9a4b12;
+  --warn-soft: #f7e6d6;
+  --ok: #26683f;
+  --ok-soft: #dcefe2;
+  --danger: #a3262b;
+  --field: rgba(56, 120, 200, 0.12);
+  --field-line: rgba(56, 120, 200, 0.55);
+  --shadow: 0 1px 2px rgba(20, 30, 40, 0.12), 0 4px 14px rgba(20, 30, 40, 0.08);
+  --ui: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --sig: "Mrs Saint Delafield", "Segoe Script", "Brush Script MT", cursive;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk: #121618; --panel: #1b2124; --raise: #232a2e; --ink: #e2e7ea; --muted: #97a3ab;
+    --line: #313a3f; --accent: #63b2c2; --accent-soft: #1d3a41; --on-accent: #0d1a1d;
+    --warn: #e9a46c; --warn-soft: #3a2a1c; --ok: #79c995; --ok-soft: #1c3325; --danger: #ef8a8e;
+    --field: rgba(110, 170, 240, 0.16); --field-line: rgba(110, 170, 240, 0.6);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --desk: #121618; --panel: #1b2124; --raise: #232a2e; --ink: #e2e7ea; --muted: #97a3ab;
+  --line: #313a3f; --accent: #63b2c2; --accent-soft: #1d3a41; --on-accent: #0d1a1d;
+  --warn: #e9a46c; --warn-soft: #3a2a1c; --ok: #79c995; --ok-soft: #1c3325; --danger: #ef8a8e;
+  --field: rgba(110, 170, 240, 0.16); --field-line: rgba(110, 170, 240, 0.6);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--desk); color: var(--ink); font: 14px/1.4 var(--ui); overflow: hidden; }
+* { box-sizing: border-box; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { display: grid; height: 100%; grid-template-rows: auto 1fr auto; grid-template-columns: 172px minmax(0, 1fr) 264px;
+  grid-template-areas: "bar bar bar" "rail doc insp" "status status status"; }
+
+/* ---------- toolbar ---------- */
+.bar { grid-area: bar; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px;
+  background: var(--panel); border-bottom: 1px solid var(--line); }
+@media (max-width: 1450px) { .zoom { min-width: 36px; } #zFit { padding: 0 6px; } .search input { width: 120px !important; } .bar { gap: 6px 6px; } }
+.brand { font-weight: 600; letter-spacing: 0.02em; display: flex; align-items: baseline; gap: 6px; margin-right: 6px; }
+.brand b { font-size: 17px; }
+.brand small { font: 500 10px var(--mono); color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.group { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 4px; background: transparent; white-space: nowrap; }
+.btn:hover { background: var(--accent-soft); }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.btn:disabled { opacity: 0.45; cursor: default; background: transparent; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn.primary { background: var(--accent); color: var(--on-accent); padding: 0 14px; font-weight: 500; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.outline { border: 1px solid var(--line); background: var(--raise); }
+.spacer { flex: 1; }
+.search { display: flex; align-items: center; gap: 4px; }
+.search input { width: 170px; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+.search .count { font: 12px var(--mono); color: var(--muted); min-width: 52px; text-align: center; }
+.zoom { font: 12px var(--mono); min-width: 44px; text-align: center; color: var(--muted); }
+
+/* ---------- page rail ---------- */
+.rail { grid-area: rail; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-right: 1px solid var(--line); }
+.rail-head { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px; border-bottom: 1px solid var(--line); }
+.rail-head .btn { height: 28px; padding: 0 7px; }
+.rail-hint { font-size: 11px; color: var(--muted); padding: 6px 10px 0; }
+.thumbs { flex: 1; overflow-y: auto; padding: 8px 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+.thumb { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px; border-radius: var(--r); border: 2px solid transparent; cursor: pointer; }
+.thumb canvas { display: block; max-width: 100%; background: #fff; box-shadow: var(--shadow); }
+.thumb .n { font: 11px var(--mono); color: var(--muted); }
+.thumb.sel { border-color: var(--accent); background: var(--accent-soft); }
+.thumb.drop-before::before, .thumb.drop-after::after { content: ""; position: absolute; left: 4px; right: 4px; height: 3px; background: var(--accent); border-radius: 2px; }
+.thumb.drop-before::before { top: -7px; } .thumb.drop-after::after { bottom: -7px; }
+.thumb .src { position: absolute; top: 8px; right: 8px; font: 10px var(--mono); padding: 1px 4px; border-radius: 3px; background: var(--raise); color: var(--muted); border: 1px solid var(--line); }
+
+/* ---------- document ---------- */
+.docwrap { grid-area: doc; position: relative; overflow: auto; min-width: 0; }
+.doc { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 48px; width: max-content; min-width: 100%; }
+.page { position: relative; background: #fff; box-shadow: var(--shadow); flex: none; }
+.page canvas.render { position: absolute; inset: 0; width: 100%; height: 100%; }
+.page svg.ann { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.page .layer { position: absolute; inset: 0; pointer-events: none; }
+.page .layer > * { pointer-events: auto; }
+.page .pno { position: absolute; left: -2px; top: -18px; font: 11px var(--mono); color: var(--muted); }
+.page.tool-create { cursor: crosshair; }
+.page.tool-text { cursor: text; }
+.hit { fill: #ff8c00; fill-opacity: 0.32; }
+.hit.current { fill: #e8400c; fill-opacity: 0.45; }
+.sel-box { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 3; pointer-events: none; }
+.handle { fill: var(--raise); stroke: var(--accent); stroke-width: 1.5; cursor: nwse-resize; }
+.ann [data-id] { cursor: move; }
+.fld { position: absolute; border: 1px solid var(--field-line); background: var(--field); border-radius: 2px; color: #111; padding: 0 3px; }
+.fld:focus { outline: 2px solid var(--accent); background: rgba(255, 255, 255, 0.85); }
+textarea.fld { resize: none; padding-top: 2px; }
+input[type="checkbox"].fld, input[type="radio"].fld { padding: 0; margin: 0; accent-color: #1d5866; }
+.tedit { position: absolute; border: 1px dashed var(--accent); background: rgba(255, 255, 255, 0.9); color: #111; padding: 0; margin: 0; resize: none; overflow: hidden; line-height: 1.2; transform-origin: 0 0; white-space: pre; }
+.ghost { position: absolute; pointer-events: none; opacity: 0.65; outline: 1px dashed var(--accent); }
+
+.drop-veil { position: absolute; inset: 0; display: grid; place-items: center; background: color-mix(in srgb, var(--accent) 14%, transparent); border: 3px dashed var(--accent); font-weight: 600; color: var(--accent); z-index: 5; }
+
+/* ---------- inspector ---------- */
+.insp { grid-area: insp; overflow-y: auto; background: var(--panel); border-left: 1px solid var(--line); padding: 12px 14px 24px; display: flex; flex-direction: column; gap: 18px; }
+.sec h3 { margin: 0 0 8px; font: 600 11px var(--ui); letter-spacing: 0.09em; text-transform: uppercase; color: var(--muted); }
+.sec p { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.row label { font-size: 13px; }
+.row .grow { flex: 1; min-width: 0; }
+.field { width: 100%; height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raise); }
+.swatches { display: flex; gap: 6px; }
+.sw { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--raise); box-shadow: 0 0 0 1px var(--line); padding: 0; }
+.sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.note { font-size: 12px; color: var(--muted); }
+.report { border-radius: var(--r); padding: 10px 12px; font-size: 13px; }
+.report.ok { background: var(--ok-soft); color: var(--ok); }
+.report.warn { background: var(--warn-soft); color: var(--warn); }
+.kbd { font: 11px var(--mono); padding: 1px 4px; border: 1px solid var(--line); border-radius: 3px; background: var(--raise); }
+.sig-list { display: flex; flex-direction: column; gap: 6px; }
+.sig-item { display: flex; align-items: center; gap: 6px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r); background: #fff; }
+.sig-item img { height: 38px; max-width: 170px; object-fit: contain; flex: 1; }
+.sig-item button { background: transparent; border: 0; color: #555; }
+
+.rail-tabs { padding: 0 8px; }
+.rail-tabs button { flex: 1; font-size: 13px; }
+.marks { flex: 1; overflow-y: auto; padding: 8px 6px 16px; }
+.mark-item { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 5px 8px; border-radius: 4px; font-size: 13px; }
+.mark-item:hover { background: var(--accent-soft); }
+.mark-item .pg { float: right; font: 11px var(--mono); color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.seg button { border: 0; background: var(--raise); padding: 5px 10px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); }
+.stamps { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.stamp-btn { border: 2px solid currentColor; border-radius: 4px; background: var(--raise); font: 700 11px var(--ui); letter-spacing: 0.06em; padding: 6px 4px; }
+.stamp-btn[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--accent); }
+.changes { display: flex; flex-direction: column; gap: 4px; max-height: 340px; overflow-y: auto; }
+.change { text-align: left; border: 1px solid var(--line); background: var(--raise); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; }
+.change .pg { font: 11px var(--mono); color: var(--muted); display: block; }
+.change del { color: var(--danger); }
+.change ins { color: var(--ok); text-decoration: none; }
+.comment { text-align: left; border: 1px solid var(--line); background: var(--raise); border-radius: 4px; padding: 6px 8px; font-size: 12.5px; }
+.comment .pg { font: 11px var(--mono); color: var(--muted); display: block; }
+.eedit { position: absolute; border: 1px solid var(--accent); background: #fff; color: #000; padding: 0 2px; margin: 0; outline: 2px solid color-mix(in srgb, var(--accent) 35%, transparent); transform-origin: 0 0; white-space: pre; }
+.cmp-del { fill: #e5484d; fill-opacity: 0.28; }
+.cmp-ins { fill: #2f9e5b; fill-opacity: 0.85; }
+.report ul { margin: 6px 0 0; padding-left: 18px; }
+textarea.field { height: auto; min-height: 70px; padding: 6px 8px; resize: vertical; }
+.hf-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.hf-grid .field { padding: 0 6px; font-size: 12px; }
+/* ---------- status ---------- */
+.status { grid-area: status; display: flex; gap: 14px; align-items: center; padding: 5px 12px; font: 12px var(--mono); color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); overflow: hidden; white-space: nowrap; }
+.status .safe { color: var(--ok); }
+.status .name { color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- dialogs and toasts ---------- */
+.modal { position: fixed; inset: 0; background: rgba(10, 16, 20, 0.45); display: grid; place-items: center; z-index: 40; padding: 16px; }
+.dialog { background: var(--panel); border-radius: 10px; box-shadow: var(--shadow); width: min(560px, 100%); max-height: 90vh; overflow: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.dialog h2 { margin: 0; font-size: 17px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; background: transparent; padding: 6px 12px; border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { border-bottom-color: var(--accent); font-weight: 600; }
+.pad { width: 100%; height: 180px; background: #fff; border: 1px solid var(--line); border-radius: var(--r); touch-action: none; display: block; }
+.typed { font-family: var(--sig); font-size: 46px; color: #14243a; background: #fff; border: 1px solid var(--line); border-radius: var(--r); padding: 8px 14px; min-height: 80px; }
+.actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.toasts { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; z-index: 30; align-items: center; pointer-events: none; }
+.toast { background: var(--ink); color: var(--panel); padding: 9px 14px; border-radius: var(--r); box-shadow: var(--shadow); font-size: 13px; max-width: min(520px, 90vw); }
+.busy { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(10, 16, 20, 0.25); z-index: 25; }
+.busy div { background: var(--panel); padding: 14px 18px; border-radius: 8px; box-shadow: var(--shadow); }
+
+/* ---------- medium screens: icon-only tools ---------- */
+.btn .lbl { display: inline; }
+@media (max-width: 2400px) { #tools .btn .lbl { display: none; } }
+@media (max-width: 1800px) { .bar .group .btn .lbl.opt { display: none; } #tools .btn { padding: 0 8px; } .search input { width: 150px; } }
+/* ---------- narrow screens ---------- */
+@media (max-width: 900px) {
+  .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto auto;
+    grid-template-areas: "bar" "rail" "doc" "insp" "status"; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+  .thumbs { flex-direction: row; overflow-x: auto; overflow-y: hidden; height: 128px; padding: 6px 10px; }
+  .thumb canvas { max-height: 86px; width: auto !important; height: 86px !important; }
+  .rail-hint { display: none; }
+  .insp { max-height: 34vh; border-left: 0; border-top: 1px solid var(--line); }
+  .search input { width: 120px; }
+  .status { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bar" role="toolbar" aria-label="Main toolbar">
+    <div class="brand"><b>Quire</b><small>PDF</small></div>
+    <div class="group">
+      <button class="btn" id="btnOpen" title="Open a PDF (Ctrl+O)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3z"/></svg><span class="lbl">Open</span></button>
+      <button class="btn" id="btnInsert" title="Add pages from another PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M12 10v7M8.5 13.5h7"/></svg><span class="lbl opt">Combine</span></button>
+      <button class="btn" id="btnCompare" title="Compare with another version"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h7v16H4zM13 4h7v16h-7z"/><path d="M6.5 9h2M15.5 9h2M6.5 13h2M15.5 13h2"/></svg><span class="lbl opt">Compare</span></button>
+      <button class="btn" id="btnWord" title="Export to Word"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 3h9l4 4v14H6z"/><path d="M8.5 11l1.5 6 2-5 2 5 1.5-6"/></svg><span class="lbl opt">Word</span></button>
+      <button class="btn" id="btnBatch" title="Process several files"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 7h11v13H7z"/><path d="M4 4h11v2M4 4v13h2"/></svg><span class="lbl opt">Batch</span></button>
+    </div>
+    <div class="group" role="radiogroup" aria-label="Tools" id="tools">
+      <button class="btn" data-tool="select" aria-pressed="true" title="Select and move (V)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l14 8-6 2-2 6z"/></svg><span class="lbl">Select</span></button>
+      <button class="btn" data-tool="highlight" title="Highlight (H)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h16"/><path d="M7 16l9-9 3 3-9 9H7z"/></svg><span class="lbl">Highlight</span></button>
+      <button class="btn" data-tool="text" title="Add text (T)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 5h14M12 5v14"/></svg><span class="lbl">Text</span></button>
+      <button class="btn" data-tool="ink" title="Draw (D)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 17c3-5 5-7 7-5s-1 6 2 6 5-8 9-11"/></svg><span class="lbl">Draw</span></button>
+      <button class="btn" data-tool="rect" title="Box (R)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="6" width="16" height="12"/></svg><span class="lbl">Box</span></button>
+      <button class="btn" data-tool="whiteout" title="White-out (W)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="7" width="16" height="10" fill="currentColor" fill-opacity="0.15"/><path d="M8 12h8"/></svg><span class="lbl">White-out</span></button>
+      <button class="btn" data-tool="sign" title="Sign (S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 18c2-6 4-9 5-8s-2 7 0 7 3-5 5-5 1 4 3 4 3-2 5-3"/><path d="M3 21h18"/></svg><span class="lbl">Sign</span></button>
+      <button class="btn" data-tool="note" title="Comment (N)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4h16v12H10l-4 4v-4H4z"/></svg><span class="lbl">Comment</span></button>
+      <button class="btn" data-tool="stamp" title="Stamp (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h10"/></svg><span class="lbl">Stamp</span></button>
+      <button class="btn" data-tool="field" title="Form field (F)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="1.5"/><path d="M7 10v4"/></svg><span class="lbl">Form field</span></button>
+      <button class="btn" data-tool="edit" title="Edit existing text (E)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h9M8.5 6v12"/><path d="M14 19l6-6-2-2-6 6v2z"/></svg><span class="lbl">Edit text</span></button>
+      <button class="btn" data-tool="redact" title="Redact (X)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="9" width="18" height="6" fill="currentColor"/><path d="M3 5h8M3 19h12"/></svg><span class="lbl">Redact</span></button>
+    </div>
+    <div class="group">
+      <button class="btn" id="btnUndo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 010 12"/></svg><span class="lbl opt">Undo</span></button>
+    </div>
+    <div class="spacer"></div>
+    <div class="search" role="search">
+      <input id="q" type="search" placeholder="Find in document" aria-label="Find in document">
+      <button class="btn outline" id="qPrev" title="Previous match" aria-label="Previous match">&lsaquo;</button>
+      <span class="count" id="qCount"></span>
+      <button class="btn outline" id="qNext" title="Next match" aria-label="Next match">&rsaquo;</button>
+    </div>
+    <div class="group">
+      <button class="btn" id="zOut" aria-label="Zoom out" title="Zoom out">&minus;</button>
+      <span class="zoom" id="zLabel">100%</span>
+      <button class="btn" id="zIn" aria-label="Zoom in" title="Zoom in">+</button>
+      <button class="btn" id="zFit" title="Fit width">Fit</button>
+    </div>
+    <button class="btn primary" id="btnSave" title="Save a copy (Ctrl+S)">Save copy</button>
+  </header>
+
+  <aside class="rail" aria-label="Pages">
+    <div class="tabs rail-tabs" role="tablist">
+      <button role="tab" id="tabPages" aria-selected="true">Pages</button>
+      <button role="tab" id="tabMarks" aria-selected="false">Bookmarks</button>
+    </div>
+    <div class="rail-head" id="railHead">
+      <button class="btn" id="pRotL" title="Rotate selected pages left">&#x27F2;</button>
+      <button class="btn" id="pRotR" title="Rotate selected pages right">&#x27F3;</button>
+      <button class="btn" id="pDel" title="Delete selected pages">Delete</button>
+      <button class="btn" id="pExtract" title="Save the selected pages as a new PDF">Extract</button>
+      <button class="btn" id="pBlank" title="Insert a blank page after the selection">Blank</button>
+      <button class="btn" id="pImage" title="Insert an image as a new page">Image</button>
+      <button class="btn" id="pSplit" title="Split into several PDFs">Split</button>
+    </div>
+    <div class="rail-hint" id="railHint">Drag to reorder. Ctrl or Shift to select several.</div>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="marks" id="marks" hidden></div>
+  </aside>
+
+  <main class="docwrap" id="docwrap" aria-label="Document">
+    <div class="doc" id="doc"></div>
+  </main>
+
+  <aside class="insp" id="insp" aria-label="Inspector"></aside>
+
+  <footer class="status">
+    <span class="name" id="stName">No document</span>
+    <span id="stPage"></span>
+    <span class="safe" id="stSafe">Your original file is never changed. Saving creates a new copy.</span>
+  </footer>
+</div>
+
+<input type="file" id="fileOpen" accept="application/pdf,.pdf" hidden>
+<input type="file" id="fileInsert" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="fileImage" accept="image/png,image/jpeg" hidden>
+<input type="file" id="fileCompare" accept="application/pdf,.pdf" hidden>
+<input type="file" id="filePageImage" accept="image/png,image/jpeg,image/webp" multiple hidden>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script src="lib/pdf-lib.min.js"></script>
+<script type="module" src="app.js"></script>
+<script>
+  // offline use when installed (not available inside a Claude artifact, which is fine)
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* not available here */ }
+  }
+</script>
+</body>
+</html>

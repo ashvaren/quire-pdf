@@ -174,6 +174,12 @@ input[type="checkbox"].fld, input[type="radio"].fld { padding: 0; margin: 0; acc
 textarea.field { height: auto; min-height: 70px; padding: 6px 8px; resize: vertical; }
 .hf-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
 .hf-grid .field { padding: 0 6px; font-size: 12px; }
+.rstep { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; margin-top: 10px; }
+.rnum { width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font: 600 12px var(--ui); display: grid; place-items: center; }
+.rbody p { margin: 4px 0 6px; }
+.rbody .row { margin: 4px 0; }
+.pedit-box { position: absolute; z-index: 3; border: 1.5px solid var(--accent); background: #fff; color: #000; padding: 1px; margin: 0; resize: none; overflow: hidden; outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent); box-sizing: content-box; }
+.pedit-hint { position: absolute; z-index: 3; background: var(--accent); color: var(--on-accent); font: 12px var(--ui); padding: 3px 8px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
 /* ---------- status ---------- */
 .status { grid-area: status; display: flex; gap: 14px; align-items: center; padding: 5px 12px; font: 12px var(--mono); color: var(--muted); background: var(--panel); border-top: 1px solid var(--line); overflow: hidden; white-space: nowrap; }
 .status .safe { color: var(--ok); }
@@ -254,7 +260,8 @@ textarea.field { height: auto; min-height: 70px; padding: 6px 8px; resize: verti
       <button class="btn" id="zIn" aria-label="Zoom in" title="Zoom in">+</button>
       <button class="btn" id="zFit" title="Fit width">Fit</button>
     </div>
-    <button class="btn primary" id="btnSave" title="Save a copy (Ctrl+S)">Save copy</button>
+    <button class="btn primary" id="btnSaveBack" title="Save changes into the original file (Ctrl+S)" hidden>Save</button>
+    <button class="btn primary" id="btnSave" title="Save a copy (Ctrl+Shift+S)">Save copy</button>
   </header>
 
   <aside class="rail" aria-label="Pages">

@@ -18,6 +18,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = (tag, attrs = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
     if (k === 'class') n.className = v; else if (k === 'text') n.textContent = v;
     else if (k.startsWith('on')) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
   }
@@ -202,6 +203,7 @@ async function openDocument(bytes, name, { sample = false } = {}) {
   S.pages = []; S.forms = {}; S.history = []; S.selPages.clear(); S.selAnnot = null;
   S.search = { q: '', hits: [], cur: -1 }; $('#q').value = ''; $('#qCount').textContent = '';
   S.lastReport = null; S.sample = sample; S.compare = null; S.railTab = 'pages';
+  S.fileHandle = null; S.replaceConfirmed = null; if ($('#btnSaveBack')) updateSaveUi();
   S.settings.protect = { on: false, user: '', owner: '', allowPrint: true, allowCopy: true, allowEdit: true };
   const src0 = S.sources[si];
   if (src0.fields.length) S.forms[si] = src0.initialValues;
@@ -560,8 +562,10 @@ function drawAnnots(u) {
       if (a.kind === 'signature') { const t = sv('text', { x: r.x + 6, y: r.y + r.h - 6, fill: '#3878c8', 'font-family': 'Helvetica, Arial, sans-serif', 'font-size': Math.min(12, r.h * 0.45), 'pointer-events': 'none' }); t.textContent = 'Sign here'; n.append(t); }
     } else if (a.type === 'redact') {
       const r = rectU2V(u, a.rect);
-      n = sv('rect', { x: r.x, y: r.y, width: r.w, height: r.h, fill: a.fill === 'white' ? '#ffffff' : '#000000', 'fill-opacity': '0.55',
-        stroke: '#d0161c', 'stroke-width': 1.5, 'stroke-dasharray': '5 3' });
+      n = S.redactPreview
+        ? sv('rect', { x: r.x, y: r.y, width: r.w, height: r.h, fill: a.fill === 'white' ? '#ffffff' : '#000000' })
+        : sv('rect', { x: r.x, y: r.y, width: r.w, height: r.h, fill: a.fill === 'white' ? '#ffffff' : '#000000', 'fill-opacity': '0.4',
+          stroke: '#d0161c', 'stroke-width': 1.5, 'stroke-dasharray': '5 3' });
     } else if (a.type === 'edit') {
       const r = rectU2V(u, a.rect);
       const [bx, by] = u2v(u, a.origin[0], a.origin[1]);
@@ -575,6 +579,17 @@ function drawAnnots(u) {
       t.setAttribute('xml:space', 'preserve');
       t.textContent = a.text;
       n.append(t, sv('rect', { x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2, fill: 'none', stroke: '#1d5866', 'stroke-opacity': '0.45', 'stroke-dasharray': '2 2' }));
+    } else if (a.type === 'pedit') {
+      const z = rectU2V(u, peditZone(a));
+      const css = cssFont(a.font);
+      n = sv('g');
+      n.append(sv('rect', { x: z.x - 1, y: z.y - 1, width: z.w + 2, height: z.h + 2, fill: '#ffffff' }));
+      for (const L of a.layout || []) for (const w of L.words) {
+        const [tx, ty] = u2v(u, w.x, L.base);
+        const t = sv('text', { x: tx, y: ty, fill: a.color || '#000', 'font-family': css.family, 'font-weight': css.weight, 'font-style': css.style, 'font-size': a.size * v.vp.scale });
+        t.textContent = w.t; n.append(t);
+      }
+      n.append(sv('rect', { x: z.x - 2, y: z.y - 2, width: z.w + 4, height: z.h + 4, fill: 'none', stroke: a.extraLines ? '#b3261e' : '#1d5866', 'stroke-opacity': '0.5', 'stroke-dasharray': '3 2' }));
     } else if (a.type === 'note') {
       const [x, y] = u2v(u, a.at[0], a.at[1]);
       const s = Math.max(14, 16 * v.vp.scale);
@@ -601,7 +616,7 @@ function drawAnnots(u) {
     if (a) {
       const b = annotBoxView(u, a);
       svg.append(sv('rect', { class: 'sel-box', x: b.x - 3, y: b.y - 3, width: b.w + 6, height: b.h + 6 }));
-      if (!['ink', 'markup', 'note', 'edit'].includes(a.type)) svg.append(sv('rect', { class: 'handle', 'data-handle': '1', x: b.x + b.w - 2, y: b.y + b.h - 2, width: 9, height: 9 }));
+      if (!['ink', 'markup', 'note', 'edit', 'pedit'].includes(a.type)) svg.append(sv('rect', { class: 'handle', 'data-handle': '1', x: b.x + b.w - 2, y: b.y + b.h - 2, width: 9, height: 9 }));
     }
   }
   // search hits
@@ -625,6 +640,7 @@ function textWidthPt(a) {
   return Math.max(20, ...(a.text || ' ').split('\n').map(l => measureCtx.measureText(l).width));
 }
 function annotBoxView(u, a) {
+  if (a.type === 'pedit') return rectU2V(u, peditZone(a));
   if (a.rect) return rectU2V(u, a.rect);
   if (a.type === 'markup') {
     const bs = a.rects.map(r => rectU2V(u, r));
@@ -710,8 +726,10 @@ function bindPagePointer(u) {
     const annEl = e.target.closest('[data-id]');
     if (S.tool === 'edit') {
       e.preventDefault();
-      const ex = annEl && p.annots.find(z => z.id === annEl.getAttribute('data-id') && z.type === 'edit');
-      return ex ? openEditEditor(u, ex, false) : startEditText(u, x, y);
+      if (document.querySelector('.pedit-box')) return;
+      const ex = annEl && p.annots.find(z => z.id === annEl.getAttribute('data-id') && (z.type === 'edit' || z.type === 'pedit'));
+      if (ex) return ex.type === 'pedit' ? openParaEditor(u, ex, false) : openEditEditor(u, ex, false, x);
+      return dragEditBox(u, x, y, e);
     }
     const handle = e.target.closest('[data-handle]');
     if (S.tool === 'select' || handle || (annEl && S.tool !== 'ink')) {
@@ -740,6 +758,7 @@ function bindPagePointer(u) {
     const p = pageOf(u); const a = p.annots.find(z => z.id === annEl.getAttribute('data-id'));
     if (a && a.type === 'text') editText(u, a);
     if (a && a.type === 'edit') openEditEditor(u, a, false);
+    if (a && a.type === 'pedit') openParaEditor(u, a, false);
     if (a && a.type === 'note') { S.selAnnot = { page: u, id: a.id }; renderInspector(); setTimeout(() => $('#noteText')?.focus(), 0); }
   });
 }
@@ -827,14 +846,16 @@ async function startEditText(u, x, y) {
   if (!hit) { toast('Click directly on a line of text to edit it. Scanned pages have no editable text.'); return; }
   const key = `${p.src}:${p.idx}:${hit.index}`;
   const existing = p.annots.find(a => a.type === 'edit' && a.itemKey === key);
-  if (existing) return openEditEditor(u, existing, false);
+  if (existing) return openEditEditor(u, existing, false, x);
+  const pe = p.annots.find(a => a.type === 'pedit' && ux >= a.rect[0] && ux <= a.rect[2] && uy >= a.rect[1] && uy <= a.rect[3]);
+  if (pe) return openParaEditor(u, pe, false);
   const fontName = await fontNameOf(p, hit.it);
   const g = hit.g;
   const draft = { id: uid(), type: 'edit', itemKey: key, rect: [g.x0 - 0.6, g.y0 - 0.2, g.x1 + 0.6, g.y1 + 0.2], origin: [g.x0, g.base], size: g.size,
     font: stdFontFor(fontName, hit.it.style && hit.it.style.fontFamily), fontName, text: hit.it.str.replace(/\s+$/, ''), orig: hit.it.str.replace(/\s+$/, ''), color: '#000000' };
-  openEditEditor(u, draft, true);
+  openEditEditor(u, draft, true, x);
 }
-function openEditEditor(u, a, isNew) {
+function openEditEditor(u, a, isNew, clickX = null) {
   const v = views.get(u);
   const r = rectU2V(u, a.rect);
   const [bx, by] = u2v(u, a.origin[0], a.origin[1]);
@@ -870,7 +891,162 @@ function openEditEditor(u, a, isNew) {
   inp.addEventListener('blur', finish, { once: true });
   v.layer.append(inp);
   const g = v.svg.querySelector(`[data-id="${a.id}"]`); if (g) g.style.display = 'none';
-  inp.focus(); inp.select();
+  inp.focus();
+  // put the cursor where the click was, so a word can be changed or added without retyping the line
+  let caret = inp.value.length;
+  if (clickX != null) {
+    measureCtx.font = `${css.style} ${css.weight} ${fontPx}px ${css.family}`;
+    let best = Infinity;
+    for (let i = 0; i <= inp.value.length; i++) {
+      const d = Math.abs(bx + measureCtx.measureText(inp.value.slice(0, i)).width - clickX);
+      if (d < best) { best = d; caret = i; }
+    }
+  }
+  inp.setSelectionRange(caret, caret);
+}
+
+// ---- edit a paragraph: drag a box round the text
+function dragEditBox(u, x0, y0, e) {
+  const v = views.get(u);
+  const ghost = sv('rect', { x: x0, y: y0, width: 0, height: 0, fill: 'rgba(29,88,102,0.08)', stroke: '#1d5866', 'stroke-dasharray': '4 3' });
+  v.svg.append(ghost);
+  let x1 = x0, y1 = y0;
+  capture(e, ev => {
+    [x1, y1] = pointIn(u, ev);
+    ghost.setAttribute('x', Math.min(x0, x1)); ghost.setAttribute('y', Math.min(y0, y1));
+    ghost.setAttribute('width', Math.abs(x1 - x0)); ghost.setAttribute('height', Math.abs(y1 - y0));
+  }, () => {
+    ghost.remove();
+    if (Math.abs(x1 - x0) < 6 && Math.abs(y1 - y0) < 6) return startEditText(u, x0, y0);
+    startParagraphEdit(u, rectV2U(u, Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0)));
+  });
+}
+let metricDoc = null;
+const metricFonts = {};
+async function metricFont(key) {
+  if (!metricFonts[key]) { if (!metricDoc) metricDoc = await PDFDocument.create(); metricFonts[key] = await metricDoc.embedFont(StandardFonts[key]); }
+  return metricFonts[key];
+}
+async function startParagraphEdit(u, R) {
+  const p = pageOf(u);
+  const items = await pageText(p);
+  const sel = [];
+  for (const it of items) {
+    if (!it.str || !it.str.trim()) continue;
+    const g = itemGeom(it); if (!g) continue;
+    const cx = (g.x0 + g.x1) / 2, cy = (g.y0 + g.y1) / 2;
+    // a run belongs to the box if its middle is inside, or if most of it is
+    if ((cx >= R[0] && cx <= R[2] && cy >= R[1] && cy <= R[3]) || (overlapArea([g.x0, g.y0, g.x1, g.y1], R) > 0.6 * (g.x1 - g.x0) * (g.y1 - g.y0))) sel.push({ it, g });
+  }
+  if (!sel.length) { toast('There is no text inside that box. Scanned pages need Recognise text first.'); return; }
+  if (p.annots.some(a => (a.type === 'edit' || a.type === 'pedit') && overlapArea(a.type === 'pedit' ? peditZone(a) : a.rect, R) > 0)) { toast('Part of that area has already been edited. Select the earlier edit and restore it first.'); return; }
+  sel.sort((a, b) => b.g.base - a.g.base || a.g.x0 - b.g.x0);
+  const lines = [];
+  for (const o of sel) {
+    const L = lines.find(l => Math.abs(l.base - o.g.base) < o.g.size * 0.5);
+    if (L) L.runs.push(o); else lines.push({ base: o.g.base, runs: [o] });
+  }
+  for (const L of lines) {
+    L.runs.sort((a, b) => a.g.x0 - b.g.x0);
+    let t = '';
+    L.runs.forEach((o, i) => {
+      if (i) { const prev = L.runs[i - 1]; if (o.g.x0 - prev.g.x1 > o.g.size * 0.15 && !/\s$/.test(t) && !/^\s/.test(o.it.str)) t += ' '; }
+      t += o.it.str;
+    });
+    L.text = t.replace(/\s+/g, ' ').trim();
+    L.x0 = Math.min(...L.runs.map(o => o.g.x0)); L.x1 = Math.max(...L.runs.map(o => o.g.x1));
+    L.y0 = Math.min(...L.runs.map(o => o.g.y0)); L.y1 = Math.max(...L.runs.map(o => o.g.y1));
+  }
+  lines.sort((a, b) => b.base - a.base);
+  const gaps = lines.slice(1).map((L, i) => lines[i].base - L.base).sort((a, b) => a - b);
+  const sizes = sel.map(o => o.g.size).sort((a, b) => a - b);
+  const size = sizes[Math.floor(sizes.length / 2)];
+  const pitch = gaps.length ? gaps[Math.floor(gaps.length / 2)] : size * 1.2;
+  const counts = new Map(); for (const o of sel) counts.set(o.it.fontName, (counts.get(o.it.fontName) || 0) + o.it.str.length);
+  const mainFont = [...counts].sort((a, b) => b[1] - a[1])[0][0];
+  const sample = sel.find(o => o.it.fontName === mainFont).it;
+  const fontName = await fontNameOf(p, sample);
+  const right = Math.max(...lines.map(L => L.x1));
+  const nonLast = lines.slice(0, -1).map(L => L.x1);
+  const align = nonLast.length >= 2 && Math.max(...nonLast) - Math.min(...nonLast) < 1.6 ? 'both' : 'left';
+  let text = '';
+  lines.forEach((L, i) => { if (i) text += (/[-‐]$/.test(text) && /^[a-z]/.test(L.text)) ? '' : ' '; text += L.text; });
+  const lineRects = lines.map(L => [L.x0 - 0.6, L.y0 - 0.3, L.x1 + 0.6, L.y1 + 0.3]);
+  const a = {
+    id: uid(), type: 'pedit', lineRects,
+    rect: [Math.min(...lineRects.map(r => r[0])), Math.min(...lineRects.map(r => r[1])), Math.max(...lineRects.map(r => r[2])), Math.max(...lineRects.map(r => r[3]))],
+    x0: lines[0].x0, contX: lines.length > 1 ? Math.min(...lines.slice(1).map(L => L.x0)) : lines[0].x0, right,
+    firstBase: lines[0].base, pitch, size, font: stdFontFor(fontName, sample.style && sample.style.fontFamily), fontName,
+    color: '#000000', text, orig: text, origLines: lines.length, align, mixed: counts.size > 1,
+  };
+  openParaEditor(u, a, true);
+}
+async function layoutPedit(a) {
+  const font = await metricFont(stdFontKey(a.font));
+  const sp = font.widthOfTextAtSize(' ', a.size);
+  const out = [];
+  let base = a.firstBase;
+  for (const para of a.text.split('\n')) {
+    const words = para.split(/\s+/).filter(Boolean);
+    if (!words.length) { base -= a.pitch; continue; }
+    let line = [], lineW = 0, first = true;
+    const start = () => (first ? a.x0 : a.contX);
+    const flush = last => { out.push({ x: start(), base, words: line, last }); base -= a.pitch; first = false; line = []; lineW = 0; };
+    for (const w of words) {
+      const ww = font.widthOfTextAtSize(sanitizeFor(font, w), a.size);
+      if (line.length && lineW + sp + ww > a.right - start() + 0.01) flush(false);
+      line.push({ t: w, w: ww }); lineW += (line.length > 1 ? sp : 0) + ww;
+    }
+    if (line.length) flush(true);
+  }
+  for (const L of out) {
+    const total = L.words.reduce((n, w) => n + w.w, 0), gaps = L.words.length - 1;
+    const gap = a.align === 'both' && !L.last && gaps > 0 ? Math.max(sp, (a.right - L.x - total) / gaps) : sp;
+    let x = L.x; for (const w of L.words) { w.x = x; x += w.w + gap; }
+  }
+  a.layout = out;
+  a.extraLines = Math.max(0, out.length - a.origLines);
+}
+function peditZone(a) { return [Math.min(a.x0, a.contX) - 1, a.rect[1] - (a.extraLines || 0) * a.pitch, Math.max(a.rect[2], a.right) + 1, a.rect[3]]; }
+function openParaEditor(u, a, isNew) {
+  const v = views.get(u);
+  const k = v.vp.scale;
+  const left = Math.min(a.x0, a.contX);
+  const box = rectU2V(u, [left - 2, a.rect[1] - 2, a.right + 2, a.rect[3] + 2]);
+  const css = cssFont(a.font);
+  const ta = el('textarea', { class: 'pedit-box', spellcheck: 'true', 'aria-label': 'Edit paragraph' });
+  ta.value = a.text;
+  Object.assign(ta.style, { left: box.x + 'px', top: box.y + 'px', width: box.w + 'px', fontSize: (a.size * k) + 'px', lineHeight: (a.pitch * k) + 'px',
+    fontFamily: css.family, fontWeight: css.weight, fontStyle: css.style, textIndent: ((a.x0 - left) * k) + 'px', textAlign: a.align === 'both' ? 'justify' : 'left' });
+  const hint = el('div', { class: 'pedit-hint', text: 'Edit freely. Ctrl+Enter or click outside to finish; Esc to cancel. Enter starts a new paragraph.' });
+  Object.assign(hint.style, { left: box.x + 'px', top: Math.max(0, box.y - 26) + 'px' });
+  const fit = () => { ta.style.height = 'auto'; ta.style.height = Math.max(box.h, ta.scrollHeight) + 'px'; };
+  let cancelled = false, done = false;
+  const finish = async () => {
+    if (done) return; done = true;
+    ta.remove(); hint.remove();
+    const val = ta.value.replace(/[ \t]+\n/g, '\n').replace(/\s+$/, '');
+    const p = pageOf(u);
+    if (!cancelled && val !== a.text) {
+      snapshot();
+      if (!isNew && val === a.orig) p.annots = p.annots.filter(z => z.id !== a.id);
+      else { a.text = val; await layoutPedit(a); if (isNew) p.annots.push(a); }
+      S.selAnnot = p.annots.includes(a) ? { page: u, id: a.id } : null;
+    }
+    drawAnnots(u); renderInspector();
+  };
+  ta.addEventListener('input', fit);
+  ta.addEventListener('keydown', ev => {
+    ev.stopPropagation();
+    if (ev.key === 'Escape') { cancelled = true; finish(); }
+    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); finish(); }
+  });
+  ta.addEventListener('blur', () => finish());
+  v.layer.append(hint, ta);
+  const g = v.svg.querySelector(`[data-id="${a.id}"]`); if (g) g.style.display = 'none';
+  fit();
+  ta.focus();
+  ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
 // ---- comments
@@ -1005,7 +1181,7 @@ function shiftAnnot(a, du) {
 }
 function startMove(u, id, e) {
   const a = pageOf(u).annots.find(z => z.id === id);
-  if (!a || a.type === 'edit' || a.type === 'markup') return; // these stay attached to their text
+  if (!a || a.type === 'edit' || a.type === 'pedit' || a.type === 'markup') return; // these stay attached to their text
   const [sx, sy] = pointIn(u, e);
   const orig = clone(a);
   let moved = false;
@@ -1300,8 +1476,9 @@ function renderInspector() {
   else if (S.tool === 'whiteout') box.append(el('section', { class: 'sec' }, el('h3', { text: 'White-out' }),
     el('p', { text: 'Covers part of a page with white, for example before typing a correction on top. The text underneath stays in the file; use Redact to remove it.' })));
   else if (S.tool === 'edit') box.append(el('section', { class: 'sec' }, el('h3', { text: 'Edit text' }),
-    el('p', { text: 'Click a line of text, change it and press Enter. On saving, the original words are removed and the new ones set in the nearest standard typeface at the same size and position.' }),
-    el('p', { class: 'note', text: 'Best for short corrections: a date, a name, a figure. Longer rewrites read better done in Word.' })));
+    el('p', {}, el('strong', { text: 'One line: ' }), document.createTextNode('click where you want to change it. The cursor goes where you clicked; type, then press Enter.')),
+    el('p', {}, el('strong', { text: 'A paragraph: ' }), document.createTextNode('drag a box round it. The whole paragraph opens for editing and rewraps to fit, keeping its margins, size and line spacing.')),
+    el('p', { class: 'note', text: 'When you save, the old words are removed and the new ones set in the nearest standard typeface (Arial, Times or Courier) at the same size.' })));
   else if (S.tool === 'note') box.append(notePrefs());
   else if (S.tool === 'stamp') box.append(stampPanel());
   else if (S.tool === 'field') box.append(fieldPanel());
@@ -1409,17 +1586,24 @@ function redactPanel() {
     toast(added ? `Marked ${added} match${added === 1 ? '' : 'es'} for redaction.` : `No ${label} found.`);
     refreshAllAnnots(); renderInspector();
   };
+  const step = (n, title, ...body) => el('div', { class: 'rstep' }, el('div', { class: 'rnum', text: String(n) }), el('div', { class: 'rbody' }, el('strong', { text: title }), ...body));
   return el('section', { class: 'sec' }, el('h3', { text: 'Redaction' }),
-    el('p', { text: 'Drag over anything to remove it. When you save, the text, image pixels and drawings under each mark are deleted from the file, not hidden.' }),
-    el('div', { class: 'row' }, el('span', { class: 'note', text: 'Fill' }), seg([['black', 'Black'], ['white', 'White']], S.style.redactFill, v => {
-      S.style.redactFill = v; for (const p of S.pages) for (const a of p.annots) if (a.type === 'redact') a.fill = v; refreshAllAnnots(); renderInspector();
-    }, 'Redaction fill')),
-    el('div', { class: 'row' }, find, el('button', { class: 'btn outline', text: 'Mark all', onclick: () => { const q = find.value.trim(); if (q.length < 2) { toast('Type at least two characters.'); return; } markAll(new RegExp(escapeRe(q), 'gi'), `matches for “${q}”`); } })),
-    el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px' }, ...Object.entries(PATTERNS).map(([k, pat]) =>
-      el('button', { class: 'btn outline', style: 'height:26px;font-size:12px;padding:0 8px', text: pat.label, onclick: () => markAll(pat.re(), pat.label.toLowerCase()) }))),
-    n ? el('div', { class: 'row' }, el('span', { class: 'note', text: `${n} area${n === 1 ? '' : 's'} marked on ${pagesWith} page${pagesWith === 1 ? '' : 's'}.` }),
-      el('button', { class: 'btn outline', text: 'Clear all', onclick: () => { snapshot(); for (const p of S.pages) p.annots = p.annots.filter(a => a.type !== 'redact'); S.selAnnot = null; refreshAllAnnots(); renderInspector(); } }))
-      : el('p', { class: 'note', text: 'Nothing marked yet.' }));
+    el('p', { class: 'note', text: 'Redaction removes content permanently. It works in three steps, and nothing is removed until step 3.' }),
+    step(1, 'Mark what must go',
+      el('p', { text: 'With Redact selected, drag a box over any text, signature or picture. Or find every occurrence of a name or number:' }),
+      el('div', { class: 'row' }, find, el('button', { class: 'btn outline', text: 'Mark all', onclick: () => { const q = find.value.trim(); if (q.length < 2) { toast('Type at least two characters.'); return; } markAll(new RegExp(escapeRe(q), 'gi'), `matches for “${q}”`); } })),
+      el('div', { style: 'display:flex;flex-wrap:wrap;gap:4px' }, ...Object.entries(PATTERNS).map(([k, pat]) =>
+        el('button', { class: 'btn outline', style: 'height:26px;font-size:12px;padding:0 8px', text: pat.label, onclick: () => markAll(pat.re(), pat.label.toLowerCase()) })))),
+    step(2, 'Check the marks',
+      el('p', { text: n ? `${n} area${n === 1 ? '' : 's'} marked on ${pagesWith} page${pagesWith === 1 ? '' : 's'}, shown in grey with a red outline. To remove one, click it and press Delete.` : 'Marked areas appear in grey with a red outline.' }),
+      el('label', { class: 'toggle' }, (() => { const c = el('input', { type: 'checkbox', id: 'redPreview' }); c.checked = !!S.redactPreview; c.addEventListener('change', () => { S.redactPreview = c.checked; refreshAllAnnots(); }); return c; })(), document.createTextNode('Show as it will look (solid boxes)')),
+      el('div', { class: 'row', style: 'margin-top:6px' }, el('span', { class: 'note', text: 'Box colour' }), seg([['black', 'Black'], ['white', 'White']], S.style.redactFill, v => {
+        S.style.redactFill = v; for (const p of S.pages) for (const a of p.annots) if (a.type === 'redact') a.fill = v; refreshAllAnnots(); renderInspector();
+      }, 'Redaction fill'),
+        n ? el('button', { class: 'btn outline', text: 'Clear all', onclick: () => { snapshot(); for (const p of S.pages) p.annots = p.annots.filter(a => a.type !== 'redact'); S.selAnnot = null; refreshAllAnnots(); renderInspector(); } }) : null)),
+    step(3, 'Save the redacted copy',
+      el('p', { text: 'Saving deletes the text, image pixels and drawings under every mark from the file itself, fills the boxes, then checks that nothing readable is left. Your original file is not changed.' }),
+      el('button', { class: 'btn primary', id: 'btnSaveRedacted', text: 'Save redacted copy', disabled: n ? null : 'disabled', onclick: () => doSave(S.pages, '(redacted)') })));
 }
 function allNotes() {
   const out = [];
@@ -1436,7 +1620,7 @@ function commentsPanel(notes) {
 }
 function annotPanel(a) {
   const names = { highlight: 'Highlight', rect: 'Box', ink: 'Drawing', text: 'Text box', image: 'Signature', whiteout: 'White-out',
-    markup: a.kind === 'underline' ? 'Underline' : a.kind === 'strike' ? 'Strikethrough' : 'Highlight', redact: 'Redaction', edit: 'Edited text', note: 'Comment', stamp: 'Stamp', field: 'Form field' };
+    markup: a.kind === 'underline' ? 'Underline' : a.kind === 'strike' ? 'Strikethrough' : 'Highlight', redact: 'Redaction', edit: 'Edited text', pedit: 'Edited paragraph', note: 'Comment', stamp: 'Stamp', field: 'Form field' };
   const sec = el('section', { class: 'sec' }, el('h3', { text: 'Selected: ' + names[a.type] }));
   const u = S.selAnnot.page;
   const upd = fn => { snapshot(); fn(); drawAnnots(u); renderInspector(); };
@@ -1470,6 +1654,16 @@ function annotPanel(a) {
   }
   if (a.type === 'redact') sec.append(el('p', { text: 'Everything under this mark is deleted when you save.' }),
     seg([['black', 'Black'], ['white', 'White']], a.fill, v => upd(() => { a.fill = v; }), 'Fill'));
+  if (a.type === 'pedit') {
+    const nl = a.layout ? a.layout.length : a.origLines;
+    sec.append(el('p', { class: 'note', text: `${nl} line${nl === 1 ? '' : 's'}, ${a.font.fam}${a.font.bold ? ' bold' : ''}, ${Math.round(a.size * 10) / 10} pt.` }));
+    if (a.extraLines) sec.append(el('div', { class: 'report warn', text: `The new wording runs ${a.extraLines} line${a.extraLines === 1 ? '' : 's'} longer than the original, so it will overlap whatever is below. Shorten it, or restore it and drag a box that includes the text below as well.` }));
+    if (a.mixed) sec.append(el('p', { class: 'note', text: 'This paragraph mixed typefaces (bold or italic words, say); the edited version uses one throughout.' }));
+    sec.append(el('div', { class: 'row', style: 'margin-top:6px' }, seg([['left', 'Left'], ['both', 'Justified']], a.align, async v => { snapshot(); a.align = v; await layoutPedit(a); drawAnnots(u); renderInspector(); }, 'Alignment')),
+      el('div', { class: 'row' }, el('button', { class: 'btn outline', text: 'Change', onclick: () => openParaEditor(u, a, false) }),
+        el('button', { class: 'btn outline', text: 'Restore original', onclick: deleteSelectedAnnot })));
+    return sec;
+  }
   if (a.type === 'edit') {
     sec.append(el('p', { class: 'note', text: `Was: “${a.orig}”` }), el('p', { class: 'note', text: `Typeface: ${a.font.fam}${a.font.bold ? ' bold' : ''}${a.font.italic ? ' italic' : ''}, ${Math.round(a.size * 10) / 10} pt (original ${a.fontName ? a.fontName.replace(/^[A-Z]{6}\+/, '') : 'unknown'})` }),
       el('div', { class: 'row' }, el('button', { class: 'btn outline', text: 'Change', onclick: () => openEditEditor(u, a, false) }),
@@ -1680,7 +1874,7 @@ async function buildPdf(pageList, { allowIdentity = true, batesStart = null } = 
   // Stage 2: permanent removal of redacted and edited content (MuPDF)
   const jobs = [];
   pageList.forEach((p, k) => {
-    const ed = p.annots.filter(a => a.type === 'edit').map(a => a.rect);
+    const ed = p.annots.filter(a => a.type === 'edit').map(a => a.rect).concat(...p.annots.filter(a => a.type === 'pedit').map(a => a.lineRects));
     const rd = p.annots.filter(a => a.type === 'redact').map(a => a.rect);
     if (ed.length) jobs.push({ page: k, mode: 'edit', rects: ed });
     if (rd.length) jobs.push({ page: k, mode: 'redact', rects: rd });
@@ -1705,6 +1899,14 @@ async function buildPdf(pageList, { allowIdentity = true, batesStart = null } = 
     const p = pageList[k]; const page = pages[k];
     for (const a of p.annots) {
       if (a.type === 'redact') { page.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1], color: a.fill === 'white' ? rgb(1, 1, 1) : rgb(0, 0, 0) }); continue; }
+      if (a.type === 'pedit') {
+        const f = await stdFont(stdFontKey(a.font));
+        for (const L of a.layout || []) for (const w of L.words) {
+          const t = sanitizeFor(f, w.t);
+          if (t.trim()) page.drawText(t, { x: w.x, y: L.base, size: a.size, font: f, color: hexToRgb(a.color || '#000000') });
+        }
+        continue;
+      }
       if (a.type === 'edit') {
         if (!a.text) continue;
         const f = await stdFont(stdFontKey(a.font));
@@ -1928,8 +2130,9 @@ async function verify(bytes, pageList, built) {
     const p = pageList[k];
     const reds = p.annots.filter(a => a.type === 'redact').map(a => a.rect);
     const eds = p.annots.filter(a => a.type === 'edit');
-    redactions += reds.length; edits += eds.length;
-    const zones = [...reds, ...eds.map(a => a.rect)];
+    const peds = p.annots.filter(a => a.type === 'pedit');
+    redactions += reds.length; edits += eds.length + peds.length;
+    const zones = [...reds, ...eds.map(a => a.rect), ...peds.map(peditZone)];
     const srcItems = await pageText(p);
     const keepWords = wordBoxes(srcItems).filter(wb => !zones.some(z => inside(wb, z))).map(wb => wb.w);
     const pg = await pdf.getPage(k + 1);
@@ -1947,6 +2150,14 @@ async function verify(bytes, pageList, built) {
       if (left.length) leaks.push(`page ${k + 1} (${left.map(w => w.raw).join(' ').slice(0, 40)})`);
     }
     if (reds.length) redJobs.push({ page: k, rects: reds });
+    for (const a of peds) {
+      const z = peditZone(a);
+      const want = words(a.text);
+      const got = outWords.filter(wb => inside(wb, z)).map(w => w.w);
+      const nowWords = new Set(want);
+      const stale = got.filter(w => !nowWords.has(w) && words(a.orig).includes(w));
+      if (!isSubsequence(want, got) || stale.length) editIssues.push(`page ${k + 1}`);
+    }
     for (const a of eds) {
       const want = words(a.text);
       const got = outWords.filter(wb => inside(wb, [a.rect[0], a.rect[1], Math.max(a.rect[2], a.rect[0] + 2000), a.rect[3]])).map(w => w.w);
@@ -1999,14 +2210,67 @@ function reportPanel(r, name, size, built, extra) {
     el('div', { class: r.ok ? 'report ok' : 'report warn' }, el('strong', { text: `${name} (${fmtBytes(size)})` }), el('ul', {}, ...lines.map(t => el('li', { text: t })))));
 }
 
-async function doSave(pageList, suffix) {
+// ---- saving to files on this computer (installed app or a normal browser tab, not inside Claude)
+const canFS = typeof window.showSaveFilePicker === 'function' && window.self === window.top;
+const PDF_TYPES = [{ description: 'PDF document', accept: { 'application/pdf': ['.pdf'] } }];
+function updateSaveUi() {
+  const h = S.fileHandle;
+  $('#btnSaveBack').hidden = !h;
+  $('#btnSave').classList.toggle('primary', !h); $('#btnSave').classList.toggle('outline', !!h);
+  $('#stSafe').textContent = h ? `Save writes your changes into ${h.name}. Save copy leaves it as it is.` : 'Your original file is never changed. Saving creates a new copy.';
+}
+async function pickAndOpen() {
+  if (!canFS) { $('#fileOpen').click(); return; }
+  let handle;
+  try { [handle] = await window.showOpenFilePicker({ types: PDF_TYPES, excludeAcceptAllOption: false }); }
+  catch (e) { if (e.name !== 'AbortError') $('#fileOpen').click(); return; }
+  await openFromHandle(handle);
+}
+async function openFromHandle(handle, extra = []) {
+  const f = await handle.getFile();
+  const ok = await busy('Opening…', async () => openDocument(await readFile(f), f.name));
+  if (ok) {
+    S.fileHandle = handle; S.replaceConfirmed = null; updateSaveUi();
+    if (extra.length) await busy('Adding pages…', async () => insertDocuments(await Promise.all(extra.map(h => h.getFile()))));
+  }
+}
+function confirmReplace(name) {
+  return new Promise(resolve => {
+    const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Replace file' });
+    const done = v => { modal.remove(); resolve(v); };
+    modal.append(el('div', { class: 'dialog' }, el('h2', { text: `Replace ${name}?` }),
+      el('p', { text: 'Your changes will be written into the original file. If you might need it as it was, cancel and use Save copy instead.' }),
+      el('p', { class: 'note', text: 'Quire asks once for each document you open.' }),
+      el('div', { class: 'actions' }, el('button', { class: 'btn outline', text: 'Cancel', onclick: () => done(false) }), el('button', { class: 'btn primary', id: 'btnConfirmReplace', text: 'Replace', onclick: () => done(true) }))));
+    document.body.append(modal);
+  });
+}
+async function writeHandle(handle, bytes) {
+  const w = await handle.createWritable();
+  await w.write(bytes); await w.close();
+}
+
+async function doSave(pageList, suffix, target = 'copy') {
   if (!S.pages.length) return;
+  const name0 = S.sample ? 'Sample.pdf' : S.sources[pageList[0].src].name;
+  let handle = null;
+  if (target === 'replace') {
+    handle = S.fileHandle;
+    if (!handle) return doSave(pageList, suffix, 'copy');
+    try {
+      if ((await handle.queryPermission({ mode: 'readwrite' })) !== 'granted' && (await handle.requestPermission({ mode: 'readwrite' })) !== 'granted') { toast('Quire was not allowed to change that file. Use Save copy instead.'); return; }
+    } catch (e) { toast('That file cannot be changed from here. Use Save copy instead.'); return; }
+    if (S.replaceConfirmed !== handle) { if (!(await confirmReplace(handle.name))) return; S.replaceConfirmed = handle; }
+  } else if (canFS) {
+    try { handle = await window.showSaveFilePicker({ suggestedName: `${baseName(name0)} ${suffix}.pdf`, types: PDF_TYPES }); }
+    catch (e) { if (e.name === 'AbortError') return; handle = null; }
+  }
   const pr = S.settings.protect;
   if (pr.on && !pr.user && !pr.owner) { toast('Enter a password under When saving, or turn protection off.'); return; }
   if (pr.on && /[,=]/.test(pr.user + pr.owner)) { toast('Passwords cannot contain commas or equals signs.'); return; }
   const open = document.querySelector('.tedit, .eedit'); if (open) open.blur();
-  const name = S.sample ? 'Sample.pdf' : S.sources[pageList[0].src].name;
-  const filename = `${baseName(name)} ${suffix}.pdf`;
+  const name = name0;
+  const filename = handle ? handle.name : `${baseName(name)} ${suffix}.pdf`;
   let res;
   try {
     res = await busy('Building your copy…', async () => {
@@ -2019,9 +2283,34 @@ async function doSave(pageList, suffix) {
   S.lastReport = reportPanel(res.check, filename, res.bytes.length, res, extra);
   renderInspector();
   if (res.check.leaks.length) { toast('Not saved: text is still readable under a redaction. See the panel on the right.', 7000); return res; }
-  const ok = await saveFile(res.bytes, filename);
+  let ok;
+  if (handle) {
+    try { await writeHandle(handle, res.bytes); ok = true; }
+    catch (e) { console.error(e); toast('Could not write the file: ' + (e.message || e)); return res; }
+  } else ok = await saveFile(res.bytes, filename);
   if (ok) toast(res.check.ok ? `Saved ${filename}` : `Saved ${filename}, with warnings. See the panel on the right.`);
+  if (ok && target === 'replace') await reopenAfterReplace(handle, res);
   return res;
+}
+// After writing into the original, carry on from the saved file so nothing is applied twice.
+async function reopenAfterReplace(handle, res) {
+  const st = S.settings, report = S.lastReport;
+  const keepProtect = clone(st.protect);
+  let bytes = res.bytes;
+  if (res.protect && res.protect.user) { const d = await Engine.decrypt(bytes, res.protect.user); if (d.ok) bytes = d.bytes; }
+  const baked = [];
+  if (st.watermark.on) { st.watermark.on = false; baked.push('watermark'); }
+  if (st.numbers.on) { st.numbers.on = false; baked.push('page numbers'); }
+  if (st.hf.on) { st.hf.on = false; baked.push('headers and footers'); }
+  if (st.bates.on) { st.bates.on = false; baked.push('Bates numbers'); }
+  st.compress.on = false; st.clean = false; st.flatten = false;
+  const scroll = $('#docwrap').scrollTop;
+  await openDocument(bytes, handle.name);
+  if (keepProtect.on) S.settings.protect = keepProtect;
+  S.fileHandle = handle; S.replaceConfirmed = handle; S.lastReport = report;
+  updateSaveUi(); renderInspector();
+  $('#docwrap').scrollTop = scroll;
+  if (baked.length) toast(`The ${baked.join(', ')} are now part of the file, so those options have been switched off.`, 6000);
 }
 
 // ---------------------------------------------------------------- sample document
@@ -2555,13 +2844,14 @@ async function splitInto(parts) {
 
 // ---------------------------------------------------------------- wiring
 function wire() {
-  $('#btnOpen').onclick = () => $('#fileOpen').click();
+  $('#btnOpen').onclick = () => pickAndOpen();
   $('#btnInsert').onclick = () => $('#fileInsert').click();
   $('#fileOpen').onchange = async () => { const f = $('#fileOpen').files[0]; $('#fileOpen').value = ''; if (f) await busy('Opening…', async () => openDocument(await readFile(f), f.name)); };
   $('#fileInsert').onchange = async () => { const fs = [...$('#fileInsert').files]; $('#fileInsert').value = ''; if (fs.length) await busy('Adding pages…', () => insertDocuments(fs)); };
   $$('#tools .btn').forEach(b => b.onclick = () => setTool(b.dataset.tool));
   $('#btnUndo').onclick = undo;
-  $('#btnSave').onclick = () => doSave(S.pages, '(edited)');
+  $('#btnSave').onclick = () => doSave(S.pages, '(edited)', 'copy');
+  $('#btnSaveBack').onclick = () => doSave(S.pages, '(edited)', 'replace');
   $('#pRotL').onclick = () => rotateSelected(-90);
   $('#pRotR').onclick = () => rotateSelected(90);
   $('#pDel').onclick = deleteSelected;
@@ -2598,9 +2888,9 @@ function wire() {
   document.addEventListener('keydown', e => {
     if (e.target.matches('input, textarea, select')) return;
     const mod = e.ctrlKey || e.metaKey;
-    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); doSave(S.pages, '(edited)'); }
+    if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); doSave(S.pages, '(edited)', S.fileHandle && !e.shiftKey ? 'replace' : 'copy'); }
     else if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
-    else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileOpen').click(); }
+    else if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); pickAndOpen(); }
     else if (mod && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#q').focus(); }
     else if ((e.key === 'Delete' || e.key === 'Backspace') && S.selAnnot) { e.preventDefault(); deleteSelectedAnnot(); }
     else if (e.key === 'Escape') { S.pendingSig = null; if (S.selAnnot) { const u = S.selAnnot.page; S.selAnnot = null; drawAnnots(u); } setTool('select'); }
@@ -2621,10 +2911,17 @@ function wire() {
   wrap.addEventListener('drop', async e => {
     if (!e.dataTransfer.files.length) return;
     e.preventDefault(); veil?.remove(); veil = null;
+    // ask for the file handle now, while the drop is current, so Save can write back to it
+    const item = e.dataTransfer.items && e.dataTransfer.items[0];
+    const handleP = canFS && item && item.getAsFileSystemHandle ? item.getAsFileSystemHandle().catch(() => null) : Promise.resolve(null);
     const files = [...e.dataTransfer.files].filter(f => /pdf$/i.test(f.type) || /\.pdf$/i.test(f.name));
     if (!files.length) { toast('Only PDF files can be opened.'); return; }
     if (e.shiftKey && S.sources.length && !S.sample) await busy('Adding pages…', () => insertDocuments(files));
-    else await busy('Opening…', async () => { await openDocument(await readFile(files[0]), files[0].name); if (files.length > 1) await insertDocuments(files.slice(1)); });
+    else {
+      await busy('Opening…', async () => { await openDocument(await readFile(files[0]), files[0].name); if (files.length > 1) await insertDocuments(files.slice(1)); });
+      const h = await handleP;
+      if (h && h.kind === 'file' && files.length === 1 && S.sources.length === 1) { S.fileHandle = h; S.replaceConfirmed = null; updateSaveUi(); }
+    }
   });
 }
 
@@ -2636,9 +2933,9 @@ openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
 if ('launchQueue' in window) {
   window.launchQueue.setConsumer(async params => {
     if (!params.files || !params.files.length) return;
-    const files = (await Promise.all(params.files.map(h => h.getFile()))).filter(f => /\.pdf$/i.test(f.name));
-    if (!files.length) return;
-    await busy('Opening…', async () => { await openDocument(await readFile(files[0]), files[0].name); if (files.length > 1) await insertDocuments(files.slice(1)); });
+    const handles = params.files.filter(h => h.kind === 'file' && /\.pdf$/i.test(h.name));
+    if (!handles.length) return;
+    await openFromHandle(handles[0], handles.slice(1));
   });
 }
-window.__quire = { S, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };
+window.__quire = { S, openFromHandle, layoutPedit, views, rectU2V, exportWord, recogniseDocument, detectFields, buildPdf, verify, openDocument, insertDocuments, setTool, runSearch, doSave, compareWith, splitInto, insertBlank };

@@ -1,6 +1,6 @@
 // Quire PDF offline cache. Change VERSION whenever the files are updated, so every
 // installed copy fetches the new set once and then runs offline again.
-const VERSION = 'quire-v4-2';
+const VERSION = 'quire-v4-3';
 const CORE = ["app.js", "compare.js", "engine.js", "export.js", "icon-192.png", "icon-512.png", "index.html", "lib/fflate.mjs", "lib/pdf-lib.min.js", "lib/pdf.min.mjs", "lib/pdf.worker.min.mjs", "manifest.json", "ocr.js", "textgeom.js"];
 const HEAVY = ["lib/mupdf/mupdf-wasm.js", "lib/mupdf/mupdf-wasm.wasm", "lib/mupdf/mupdf.js", "lib/tess/eng-traineddata.wasm", "lib/tess/ocr-worker.js", "lib/tess/tesseract-core-lstm.wasm.js", "lib/tess/tesseract-core-simd-lstm.wasm.js", "lib/tess/tesseract.esm.min.js", "lib/tess/worker.min.js"];
 

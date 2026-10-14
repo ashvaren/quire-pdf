@@ -578,7 +578,7 @@ function drawAnnots(u) {
         'font-size': a.size * v.vp.scale, transform: `rotate(${ang} ${bx} ${by})` });
       t.setAttribute('xml:space', 'preserve');
       t.textContent = a.text;
-      n.append(t, sv('rect', { x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2, fill: 'none', stroke: '#4a6272', 'stroke-opacity': '0.45', 'stroke-dasharray': '2 2' }));
+      n.append(t, sv('rect', { class: 'ed-outline', x: r.x - 1, y: r.y - 1, width: r.w + 2, height: r.h + 2, fill: 'none', stroke: '#4a6272', 'stroke-opacity': '0.6', 'stroke-dasharray': '2 2' }));
     } else if (a.type === 'pedit') {
       const z = rectU2V(u, peditZone(a));
       const css = cssFont(a.font);
@@ -589,7 +589,7 @@ function drawAnnots(u) {
         const t = sv('text', { x: tx, y: ty, fill: a.color || '#000', 'font-family': css.family, 'font-weight': css.weight, 'font-style': css.style, 'font-size': a.size * v.vp.scale });
         t.textContent = w.t; n.append(t);
       }
-      n.append(sv('rect', { x: z.x - 2, y: z.y - 2, width: z.w + 4, height: z.h + 4, fill: 'none', stroke: a.extraLines ? '#b3261e' : '#4a6272', 'stroke-opacity': '0.5', 'stroke-dasharray': '3 2' }));
+      n.append(sv('rect', { class: a.extraLines ? 'ed-warn' : 'ed-outline', x: z.x - 2, y: z.y - 2, width: z.w + 4, height: z.h + 4, fill: 'none', stroke: a.extraLines ? '#b3261e' : '#4a6272', 'stroke-opacity': '0.6', 'stroke-dasharray': '3 2' }));
     } else if (a.type === 'note') {
       const [x, y] = u2v(u, a.at[0], a.at[1]);
       const s = Math.max(14, 16 * v.vp.scale);
@@ -717,8 +717,8 @@ function bindPagePointer(u) {
   const div = v.div;
   div.addEventListener('pointerdown', e => {
     if (e.button !== 0) return;
-    if (e.target.closest('.fld') || e.target.closest('.tedit')) return;
-    const open = document.querySelector('.tedit');
+    if (e.target.closest('.fld') || e.target.closest('.tedit') || e.target.closest('.eedit') || e.target.closest('.pedit-box')) return;
+    const open = document.querySelector('.tedit, .eedit, .pedit-box');
     if (open) { e.preventDefault(); open.blur(); return; }
     const p = pageOf(u);
     const [x, y] = pointIn(u, e);
@@ -726,9 +726,8 @@ function bindPagePointer(u) {
     const annEl = e.target.closest('[data-id]');
     if (S.tool === 'edit') {
       e.preventDefault();
-      if (document.querySelector('.pedit-box')) return;
       const ex = annEl && p.annots.find(z => z.id === annEl.getAttribute('data-id') && (z.type === 'edit' || z.type === 'pedit'));
-      if (ex) return ex.type === 'pedit' ? openParaEditor(u, ex, false) : openEditEditor(u, ex, false, x);
+      if (ex && ex.type === 'edit') return openEditEditor(u, ex, false, x);
       return dragEditBox(u, x, y, e);
     }
     const handle = e.target.closest('[data-handle]');
@@ -848,7 +847,29 @@ async function startEditText(u, x, y) {
   const existing = p.annots.find(a => a.type === 'edit' && a.itemKey === key);
   if (existing) return openEditEditor(u, existing, false, x);
   const pe = p.annots.find(a => a.type === 'pedit' && ux >= a.rect[0] && ux <= a.rect[2] && uy >= a.rect[1] && uy <= a.rect[3]);
-  if (pe) return openParaEditor(u, pe, false);
+  if (pe) { const c = peditOffsetAt(pe, ux, uy); return openParaEditor(u, pe, false, [c, c]); }
+  const same = [];
+  for (const it of items) {
+    if (!it.str || !it.str.trim()) continue;
+    const g2 = itemGeom(it); if (!g2) continue;
+    if (Math.abs(g2.base - hit.g.base) < hit.g.size * 0.35) same.push(g2);
+  }
+  if (same.length > 1) {
+    same.sort((a, b) => a.x0 - b.x0);
+    // keep only the run of pieces that touches the clicked one
+    let i0 = same.findIndex(g2 => g2.x0 === hit.g.x0 && g2.x1 === hit.g.x1), i1 = i0;
+    if (i0 >= 0) {
+      // only word-by-word text (as recognition produces) is joined; a wider gap, such as after a label, ends the line
+      const gap = hit.g.size * 0.6;
+      while (i0 > 0 && same[i0].x0 - same[i0 - 1].x1 < gap) i0--;
+      while (i1 < same.length - 1 && same[i1 + 1].x0 - same[i1].x1 < gap) i1++;
+      if (i1 > i0) {
+        const run = same.slice(i0, i1 + 1);
+        const R = [run[0].x0 - 0.5, Math.min(...run.map(g2 => g2.y0)) + 0.1, run.at(-1).x1 + 0.5, Math.max(...run.map(g2 => g2.y1)) - 0.1];
+        return startParagraphEdit(u, R, ux);
+      }
+    }
+  }
   const fontName = await fontNameOf(p, hit.it);
   const g = hit.g;
   const draft = { id: uid(), type: 'edit', itemKey: key, rect: [g.x0 - 0.6, g.y0 - 0.2, g.x1 + 0.6, g.y1 + 0.2], origin: [g.x0, g.base], size: g.size,
@@ -879,7 +900,7 @@ function openEditEditor(u, a, isNew, clickX = null) {
       const p = pageOf(u);
       if (isNew) { a.text = val; p.annots.push(a); } else a.text = val;
       if (!isNew && val === a.orig) p.annots = p.annots.filter(z => z.id !== a.id); // back to the original wording
-      S.selAnnot = p.annots.includes(a) ? { page: u, id: a.id } : null;
+      S.selAnnot = null;
     }
     drawAnnots(u); renderInspector();
   };
@@ -927,7 +948,7 @@ async function metricFont(key) {
   if (!metricFonts[key]) { if (!metricDoc) metricDoc = await PDFDocument.create(); metricFonts[key] = await metricDoc.embedFont(StandardFonts[key]); }
   return metricFonts[key];
 }
-async function startParagraphEdit(u, R) {
+async function startParagraphEdit(u, R, clickX = null) {
   const p = pageOf(u);
   const items = await pageText(p);
   const sel = [];
@@ -938,6 +959,8 @@ async function startParagraphEdit(u, R) {
     // a run belongs to the box if its middle is inside, or if most of it is
     if ((cx >= R[0] && cx <= R[2] && cy >= R[1] && cy <= R[3]) || (overlapArea([g.x0, g.y0, g.x1, g.y1], R) > 0.6 * (g.x1 - g.x0) * (g.y1 - g.y0))) sel.push({ it, g });
   }
+  const prior = p.annots.filter(a => a.type === 'pedit' && overlapArea(peditZone(a), R) > 0);
+  if (prior.length === 1) { const rg = peditRangeIn(prior[0], R); return openParaEditor(u, prior[0], false, rg || [prior[0].text.length, prior[0].text.length]); }
   if (!sel.length) { toast('There is no text inside that box. Scanned pages need Recognise text first.'); return; }
   if (p.annots.some(a => (a.type === 'edit' || a.type === 'pedit') && overlapArea(a.type === 'pedit' ? peditZone(a) : a.rect, R) > 0)) { toast('Part of that area has already been edited. Select the earlier edit and restore it first.'); return; }
   sel.sort((a, b) => b.g.base - a.g.base || a.g.x0 - b.g.x0);
@@ -979,7 +1002,19 @@ async function startParagraphEdit(u, R) {
     firstBase: lines[0].base, pitch, size, font: stdFontFor(fontName, sample.style && sample.style.fontFamily), fontName,
     color: '#000000', text, orig: text, origLines: lines.length, align, mixed: counts.size > 1,
   };
-  openParaEditor(u, a, true);
+  let range = null;
+  if (clickX != null && lines.length === 1) {
+    // cursor where the click was: find the piece under it and the matching place in the text
+    const runs = lines[0].runs; let pos = 0, caret = text.length, bd = Infinity;
+    for (const o of runs) {
+      const str = o.it.str.replace(/\s+/g, ' ').trim(); if (!str) continue;
+      const at = text.indexOf(str, pos); if (at < 0) continue; pos = at + str.length;
+      const d = clickX < o.g.x0 ? o.g.x0 - clickX : clickX > o.g.x1 ? clickX - o.g.x1 : 0;
+      if (d < bd) { bd = d; caret = at + Math.round(Math.max(0, Math.min(1, (clickX - o.g.x0) / ((o.g.x1 - o.g.x0) || 1))) * str.length); }
+    }
+    range = [caret, caret];
+  }
+  openParaEditor(u, a, true, range);
 }
 async function layoutPedit(a) {
   const font = await metricFont(stdFontKey(a.font));
@@ -994,11 +1029,13 @@ async function layoutPedit(a) {
     const flush = last => { out.push({ x: start(), base, words: line, last }); base -= a.pitch; first = false; line = []; lineW = 0; };
     for (const w of words) {
       const ww = font.widthOfTextAtSize(sanitizeFor(font, w), a.size);
-      if (line.length && lineW + sp + ww > a.right - start() + 0.01) flush(false);
+      if (line.length && a.origLines > 1 && lineW + sp + ww > a.right - start() + 0.01) flush(false);
       line.push({ t: w, w: ww }); lineW += (line.length > 1 ? sp : 0) + ww;
     }
     if (line.length) flush(true);
   }
+  let pos = 0;
+  for (const L of out) for (const w of L.words) { const i = a.text.indexOf(w.t, pos); w.o = i < 0 ? pos : i; pos = w.o + w.t.length; }
   for (const L of out) {
     const total = L.words.reduce((n, w) => n + w.w, 0), gaps = L.words.length - 1;
     const gap = a.align === 'both' && !L.last && gaps > 0 ? Math.max(sp, (a.right - L.x - total) / gaps) : sp;
@@ -1006,9 +1043,29 @@ async function layoutPedit(a) {
   }
   a.layout = out;
   a.extraLines = Math.max(0, out.length - a.origLines);
+  a.layoutRight = Math.max(0, ...out.map(L => L.words.length ? L.words.at(-1).x + L.words.at(-1).w : 0));
 }
-function peditZone(a) { return [Math.min(a.x0, a.contX) - 1, a.rect[1] - (a.extraLines || 0) * a.pitch, Math.max(a.rect[2], a.right) + 1, a.rect[3]]; }
-function openParaEditor(u, a, isNew) {
+// character position in a.text nearest a point on the page
+function peditOffsetAt(a, ux, uy) {
+  const lines = a.layout || [];
+  if (!lines.length) return a.text.length;
+  const L = lines.reduce((b, l) => Math.abs(uy - (l.base + a.size * 0.3)) < Math.abs(uy - (b.base + a.size * 0.3)) ? l : b);
+  if (!L.words.length) return a.text.length;
+  let best = L.words[0], bd = Infinity;
+  for (const w of L.words) { const d = ux < w.x ? w.x - ux : ux > w.x + w.w ? ux - w.x - w.w : 0; if (d < bd) { bd = d; best = w; } }
+  const f = Math.max(0, Math.min(1, (ux - best.x) / (best.w || 1)));
+  return best.o + Math.round(f * best.t.length);
+}
+function peditRangeIn(a, R) {
+  let lo = Infinity, hi = -1;
+  for (const L of a.layout || []) for (const w of L.words) {
+    const cx = w.x + w.w / 2, cy = L.base + a.size * 0.3;
+    if (cx >= R[0] && cx <= R[2] && cy >= R[1] && cy <= R[3]) { lo = Math.min(lo, w.o); hi = Math.max(hi, w.o + w.t.length); }
+  }
+  return hi < 0 ? null : [lo, hi];
+}
+function peditZone(a) { return [Math.min(a.x0, a.contX) - 1, a.rect[1] - (a.extraLines || 0) * a.pitch, Math.max(a.rect[2], a.right, a.layoutRight || 0) + 1, a.rect[3]]; }
+function openParaEditor(u, a, isNew, range = null) {
   const v = views.get(u);
   const k = v.vp.scale;
   const left = Math.min(a.x0, a.contX);
@@ -1031,7 +1088,7 @@ function openParaEditor(u, a, isNew) {
       snapshot();
       if (!isNew && val === a.orig) p.annots = p.annots.filter(z => z.id !== a.id);
       else { a.text = val; await layoutPedit(a); if (isNew) p.annots.push(a); }
-      S.selAnnot = p.annots.includes(a) ? { page: u, id: a.id } : null;
+      S.selAnnot = null;
     }
     drawAnnots(u); renderInspector();
   };
@@ -1042,11 +1099,13 @@ function openParaEditor(u, a, isNew) {
     if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); finish(); }
   });
   ta.addEventListener('blur', () => finish());
+  ta.addEventListener('pointerdown', ev => ev.stopPropagation());
   v.layer.append(hint, ta);
   const g = v.svg.querySelector(`[data-id="${a.id}"]`); if (g) g.style.display = 'none';
   fit();
   ta.focus();
-  ta.setSelectionRange(ta.value.length, ta.value.length);
+  const [s0, s1] = range || [ta.value.length, ta.value.length];
+  ta.setSelectionRange(s0, s1);
 }
 
 // ---- comments
@@ -1879,11 +1938,15 @@ async function buildPdf(pageList, { allowIdentity = true, batesStart = null } = 
     if (ed.length) jobs.push({ page: k, mode: 'edit', rects: ed });
     if (rd.length) jobs.push({ page: k, mode: 'redact', rects: rd });
   });
+  let scanCovered = [];
   if (jobs.length) {
     const mid = await out.save({ useObjectStreams: false });
     const cleaned = await Engine.removeContent(mid, jobs);
+    scanCovered = cleaned.covered || [];
     out = await PDFDocument.load(cleaned, { updateMetadata: false });
   }
+  const onScan = (k, rects) => scanCovered.some(c => c.page === k && rects.some(r => r === c.rect || (r[0] === c.rect[0] && r[1] === c.rect[1] && r[2] === c.rect[2] && r[3] === c.rect[3])));
+  const white = (page, r) => page.drawRectangle({ x: r[0], y: r[1], width: r[2] - r[0], height: r[3] - r[1], color: rgb(1, 1, 1) });
 
   // Stage 3: markup, replacement text, stamps, watermark and page numbers (pdf-lib)
   out.setProducer('Quire PDF'); out.setModificationDate(new Date());
@@ -1900,6 +1963,7 @@ async function buildPdf(pageList, { allowIdentity = true, batesStart = null } = 
     for (const a of p.annots) {
       if (a.type === 'redact') { page.drawRectangle({ x: a.rect[0], y: a.rect[1], width: a.rect[2] - a.rect[0], height: a.rect[3] - a.rect[1], color: a.fill === 'white' ? rgb(1, 1, 1) : rgb(0, 0, 0) }); continue; }
       if (a.type === 'pedit') {
+        if (onScan(k, a.lineRects)) white(page, peditZone(a));
         const f = await stdFont(stdFontKey(a.font));
         for (const L of a.layout || []) for (const w of L.words) {
           const t = sanitizeFor(f, w.t);
@@ -1908,6 +1972,7 @@ async function buildPdf(pageList, { allowIdentity = true, batesStart = null } = 
         continue;
       }
       if (a.type === 'edit') {
+        if (onScan(k, [a.rect])) white(page, [a.rect[0], a.rect[1], Math.max(a.rect[2], a.origin[0] + (await stdFont(stdFontKey(a.font))).widthOfTextAtSize(sanitizeFor(await stdFont(stdFontKey(a.font)), a.text || ''), a.size) + 1), a.rect[3]]);
         if (!a.text) continue;
         const f = await stdFont(stdFontKey(a.font));
         const t = sanitizeFor(f, a.text);

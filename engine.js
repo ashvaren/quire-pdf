@@ -42,6 +42,7 @@ export async function removeContent(bytes, jobs) {
   const P = mupdf.PDFPage;
   const doc = open(mupdf, bytes);
   const byPage = new Map();
+  const covered = [];
   for (const j of jobs) {
     if (!byPage.has(j.page)) byPage.set(j.page, { edit: [], redact: [] });
     byPage.get(j.page)[j.mode].push(...j.rects);
@@ -53,6 +54,20 @@ export async function removeContent(bytes, jobs) {
     if (sets.edit.length) {
       for (const r of sets.edit) { const a = page.createAnnotation('Redact'); a.setRect(toPageRect(m, r)); }
       page.applyRedactions(false, P.REDACT_IMAGE_NONE, P.REDACT_LINE_ART_NONE, P.REDACT_TEXT_REMOVE);
+      // on a scanned page the words are part of the picture, so removing the text layer leaves them
+      // showing: look at what is left under each edit and report the ones that still show writing
+      const s = 2, pix = page.toPixmap(mupdf.Matrix.scale(s, s), mupdf.ColorSpace.DeviceGray, false, false);
+      const W = pix.getWidth(), H = pix.getHeight(), st = pix.getStride(), px = pix.getPixels();
+      const ox = pix.getX ? pix.getX() : 0, oy = pix.getY ? pix.getY() : 0;
+      for (const r of sets.edit) {
+        const q = toPageRect(m, r);
+        const x0 = Math.max(0, Math.floor(q[0] * s) - ox), x1 = Math.min(W, Math.ceil(q[2] * s) - ox);
+        const y0 = Math.max(0, Math.floor(q[1] * s) - oy), y1 = Math.min(H, Math.ceil(q[3] * s) - oy);
+        let n = 0, dark = 0, light = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { const v = px[y * st + x]; n++; if (v < 110) dark++; else if (v > 200) light++; }
+        if (n && dark / n > 0.03 && dark / n < 0.6 && light / n > 0.3) covered.push({ page: pi, rect: r });
+      }
+      try { pix.destroy?.(); } catch { /* ignore */ }
     }
     // redactions: remove text, blank the image pixels and covered line art
     if (sets.redact.length) {
@@ -60,7 +75,9 @@ export async function removeContent(bytes, jobs) {
       page.applyRedactions(false, P.REDACT_IMAGE_PIXELS, P.REDACT_LINE_ART_REMOVE_IF_COVERED, P.REDACT_TEXT_REMOVE);
     }
   }
-  return out(doc, 'garbage=compact');
+  const res = out(doc, 'garbage=compact');
+  res.covered = covered;
+  return res;
 }
 
 const PERM = { print: 4, modify: 8, copy: 16, annotate: 32, fill: 256, extract: 512, assemble: 1024, printHigh: 2048 };

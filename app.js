@@ -1621,6 +1621,11 @@ const SHORTCUTS = [
 // Each release adds an entry at the top. APP_VERSION is shown in the status bar and drives the
 // "What's new" box, which appears once after an update unless switched off.
 const RELEASES = [
+  { v: '1.5.1', date: '14 October 2026', items: [
+    'The status bar at the bottom is no longer cut off.',
+    'Tour, What\u2019s new and Feedback buttons in the toolbar, at the top right.',
+    'After an update, the tour follows What\u2019s new on start (unless switched off), instead of being skipped.',
+  ] },
   { v: '1.5.0', date: '14 October 2026', items: [
     'Send feedback: report a bug, request a feature or ask a question from inside Quire. Reports go to a private list on GitHub, with optional technical details to help find problems.',
     'Feedback sits in the status bar, in the side panel and in the tour.',
@@ -1660,13 +1665,13 @@ const RELEASES = [
 const APP_VERSION = RELEASES[0].v;
 const vparts = v => v.split('.').map(Number);
 const newer = (a, b) => { const x = vparts(a), y = vparts(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]; return false; };
-function showWhatsNew({ since = null, onStart = false } = {}) {
+function showWhatsNew({ since = null, onStart = false, onClose = null } = {}) {
   if (document.querySelector('.modal[aria-label="What’s new"]')) return;
   const list = since ? RELEASES.filter(r => newer(r.v, since)) : RELEASES;
   const modal = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'What’s new' });
   const off = el('input', { type: 'checkbox', id: 'wnOff' }); off.checked = !!store.get('whatsNewOff', false);
   off.addEventListener('change', () => store.set('whatsNewOff', off.checked));
-  const close = () => { modal.remove(); document.removeEventListener('keydown', esc, true); store.set('seenVersion', APP_VERSION); };
+  const close = () => { modal.remove(); document.removeEventListener('keydown', esc, true); store.set('seenVersion', APP_VERSION); if (onClose) setTimeout(onClose, 150); };
   const esc = ev => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); close(); } };
   document.addEventListener('keydown', esc, true);
   modal.addEventListener('pointerdown', ev => { if (ev.target === modal) close(); });
@@ -1782,8 +1787,8 @@ const TOUR = [
   { sel: '#btnInsert', to: '#btnBatch', title: 'Combine, compare, Word and batch', body: 'Add pages from other PDFs, compare two versions with the changes marked, export to an editable Word document, or apply the same job to a folder of files.' },
   { sel: '.search', title: 'Find', body: 'Search the whole document (Ctrl+F). Enter jumps to the next match, Shift+Enter to the previous one.' },
   { sel: '#insp', title: 'The side panel', body: 'Settings for the selected tool or item appear here, along with options for saving: watermark, page numbers, headers and footers, Bates numbers, smaller file size and a password. After each save, a report confirms what was checked.' },
-  { sel: '#stVer', title: 'Version and what’s new', body: 'The version you are using is shown here. Click it at any time to see what has changed in each release. After an update, a short What’s new summary also appears once when Quire starts; you can switch that off from the box itself.' },
-  { sel: '#stFeedback', title: 'Send feedback', body: 'Found a bug, want a new feature or have a question? Click Feedback, choose which it is and describe it. It goes to a private list on GitHub so it can be tracked and dealt with.' },
+  { sel: '#btnTourTop', to: '#btnWhatsNew', title: 'Tour and what’s new', body: 'Run this tour again at any time, or see what has changed in each version. The version you are using is shown at the bottom right. After an update, What’s new also appears once when Quire starts; you can switch that off from the box itself.' },
+  { sel: '#btnFeedback', title: 'Send feedback', body: 'Found a bug, want a new feature or have a question? Click Feedback, choose which it is and describe it. It goes to a private list on GitHub so it can be tracked and dealt with.' },
   { sel: '#btnTheme', title: 'Light or dark', body: 'Switch between light and dark mode. Press ? at any time for the full list of keyboard shortcuts, and use Take the tour in the side panel to see this again.' },
 ];
 let tourEl = null;
@@ -3332,15 +3337,18 @@ await openDocument(await sampleBytes(), 'Sample.pdf', { sample: true });
 let launchedWithFile = false;
 $('#stVer').textContent = `Quire ${APP_VERSION}`;
 $('#stVer').onclick = () => showWhatsNew();
-$('#stFeedback').onclick = () => openFeedback();
+$('#btnFeedback').onclick = () => openFeedback();
+$('#btnWhatsNew').onclick = () => showWhatsNew();
+$('#btnTourTop').onclick = () => startTour();
 setTimeout(() => {
   if (launchedWithFile || document.querySelector('.modal')) return;
   const seen = store.get('seenVersion', null);
   // after an update: what's new (unless switched off); otherwise the tour (unless switched off)
-  if (seen && newer(APP_VERSION, seen) && !store.get('whatsNewOff', false)) return showWhatsNew({ since: seen, onStart: true });
-  if (!seen && store.get('tourHidden', false) && !store.get('whatsNewOff', false)) return showWhatsNew({ since: RELEASES[1].v, onStart: true });
+  // after an update: what's new first, then the tour (each unless switched off)
+  const tour = () => { if (!store.get('tourHidden', false) && !document.querySelector('.modal')) startTour(); };
+  if (seen && newer(APP_VERSION, seen) && !store.get('whatsNewOff', false)) return showWhatsNew({ since: seen, onStart: true, onClose: tour });
   store.set('seenVersion', APP_VERSION);
-  if (!store.get('tourHidden', false)) startTour();
+  tour();
 }, 700);
 // When installed as an app and chosen to open a PDF from File Explorer, open that file.
 if ('launchQueue' in window) {
